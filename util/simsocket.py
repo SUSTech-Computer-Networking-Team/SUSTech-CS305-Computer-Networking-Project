@@ -91,6 +91,7 @@ class SimSocket():
             # check if spiffy header intact
             if not to_addr == self.__address:
                 self.__logger.error("Packet header corrupted, please check bytes read.")
+                self.__logger.error(f"self addr: {self.__address}, to_addr: {to_addr}")
                 raise Exception("Packet header corrupted!")
 
         else:

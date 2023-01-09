@@ -1,5 +1,5 @@
-*.chuckhash
-*.fragment
+test/*/*.fragment
+test/*/*/*.fragment
 *.pyc
 log/
 *.log
