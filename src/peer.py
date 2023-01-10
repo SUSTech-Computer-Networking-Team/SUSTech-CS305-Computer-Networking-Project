@@ -1,32 +1,34 @@
-import sys
 import os
+import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-import select
-import util.simsocket as simsocket
-import struct
-import socket
-import util.bt_utils as bt_utils
-import hashlib
-import argparse
+
+from enum import Enum
+from peer_state import *
+from peer_packet import *
+from peer_constant import *
+
 import pickle
+import argparse
+import hashlib
+import util.bt_utils as bt_utils
+import socket
+import struct
+import util.simsocket as simsocket
+import select
 
 """
 This is CS305 project skeleton code.
 Please refer to the example files - example/dumpreceiver.py and example/dumpsender.py - to learn how to play with this skeleton.
 """
 
-BUF_SIZE = 1400
-CHUNK_DATA_SIZE = 512*1024
-HEADER_LEN = struct.calcsize("HBBHHII")
-MAX_PAYLOAD = 1024
-
 config = None
 ex_output_file = None
 ex_received_chunk = dict()
 ex_downloading_chunkhash = ""
 
+this_peer_state = PeerState()
 
-def process_download(sock,chunkfile, outputfile):
+def process_download(sock, chunkfile, outputfile):
     '''
     receiver part
     if DOWNLOAD is used, the peer will keep getting files until it is done
@@ -37,7 +39,7 @@ def process_download(sock,chunkfile, outputfile):
     global ex_downloading_chunkhash
 
     ex_output_file = outputfile
-    #Step 1: read chunkhash to be downloaded from chunkfile
+    # Step 1: read chunkhash to be downloaded from chunkfile
     download_hash = bytes()
     with open(chunkfile, 'r') as cf:
         index, datahash_str = cf.readline().strip().split(" ")
@@ -52,8 +54,9 @@ def process_download(sock,chunkfile, outputfile):
     # |2byte magic|1byte type |1byte team|
     # |2byte  header len  |2byte pkt len |
     # |      4byte  seq                  |
-    # |      4byte  ack                  | 
-    whohas_header = struct.pack("!HBBHHII", 52305, 35, 0, HEADER_LEN, HEADER_LEN+len(download_hash), 0, 0)
+    # |      4byte  ack                  |
+    whohas_header = struct.pack(
+        "!HBBHHII", 52305, MY_TEAM, 0, HEADER_LEN, HEADER_LEN+len(download_hash), 0, 0)
     whohas_pkt = whohas_header + download_hash
     info = struct.unpack("!HBBHHII", whohas_header)
 
@@ -70,14 +73,23 @@ def process_inbound_udp(sock):
     # Receive pkt
     global config
     global ex_sending_chunkhash
-    
+
     pkt, from_addr = sock.recvfrom(BUF_SIZE)
-    Magic, Team, Type, hlen, plen, Seq, Ack= struct.unpack("!HBBHHII", pkt[:HEADER_LEN]) # add !
+    Magic, Team, Type, hlen, plen, Seq, Ack = struct.unpack(
+        "!HBBHHII", pkt[:HEADER_LEN])  # add !
     data = pkt[HEADER_LEN:]
     print(f"prepared to send [team:{Team}, type:{Type}, Seq:{Seq}, Ack:{Ack}")
-    
+
+    Type = PeerPacketType(Type)
     # sender part
-    if Type == 0:
+    if Type == PeerPacketType.WHOHAS:
+        # 判断是否超过最大发送次数
+        if len(this_peer_state.sending_connections) >= config.max_connections:
+            # sock.send
+            # TODO denied seq和ack可能不对。
+            denyPacket = PeerPacket(type_code=PeerPacketType.DENIED.value)
+            sock.sendto(denyPacket.make_binary(), from_addr)
+
         # received an WHOHAS pkt
         # see what chunk the sender has
         whohas_chunk_hash = data[:20]
@@ -87,20 +99,22 @@ def process_inbound_udp(sock):
 
         print(f"whohas: {chunkhash_str}, has: {list(config.haschunks.keys())}")
         if chunkhash_str in config.haschunks:
-        # send back IHAVE pkt
-            ihave_header = struct.pack("!HBBHHII", 52305, 35, 1, HEADER_LEN, HEADER_LEN+len(whohas_chunk_hash), 0, 0)
+            # send back IHAVE pkt
+            ihave_header = struct.pack(
+                "!HBBHHII", 52305, MY_TEAM, 1, HEADER_LEN, HEADER_LEN+len(whohas_chunk_hash), 0, 0)
             ihave_pkt = ihave_header+whohas_chunk_hash
             sock.sendto(ihave_pkt, from_addr)
 
-    elif Type == 2:
+    elif Type == PeerPacketType.GET:
         # received a GET pkt
         chunk_data = config.haschunks[ex_sending_chunkhash][:MAX_PAYLOAD]
 
         # send back DATA
-        data_header = struct.pack("!HBBHHII", 52305,35, 3, HEADER_LEN, HEADER_LEN, 1, 0)
+        data_header = struct.pack(
+            "!HBBHHII", 52305, MY_TEAM, 3, HEADER_LEN, HEADER_LEN, 1, 0)
         sock.sendto(data_header+chunk_data, from_addr)
-        
-    elif Type == 4:
+
+    elif Type == PeerPacketType.ACK:
         # received an ACK pkt
         ack_num = Ack
         if (ack_num) * MAX_PAYLOAD >= CHUNK_DATA_SIZE:
@@ -112,28 +126,31 @@ def process_inbound_udp(sock):
             right = min((ack_num+1)*MAX_PAYLOAD, CHUNK_DATA_SIZE)
             next_data = config.haschunks[ex_sending_chunkhash][left: right]
             # send next data
-            data_header = struct.pack("!HBBHHII", 52305, 35, 3, HEADER_LEN, HEADER_LEN+len(next_data), ack_num + 1, 0)
+            data_header = struct.pack(
+                "!HBBHHII", 52305, MY_TEAM, 3, HEADER_LEN, HEADER_LEN+len(next_data), ack_num + 1, 0)
             sock.sendto(data_header+next_data, from_addr)
 
     # receiver part
-    elif Type == 1:
+    elif Type == PeerPacketType.IHAVE:
         # received an IHAVE pkt
         # see what chunk the sender has
         get_chunk_hash = data[:20]
 
         # send back GET pkt
-        get_header = struct.pack("!HBBHHII", 52305, 35, 2 , HEADER_LEN, HEADER_LEN+len(get_chunk_hash), 0, 0)
+        get_header = struct.pack(
+            "!HBBHHII", 52305, MY_TEAM, 2, HEADER_LEN, HEADER_LEN+len(get_chunk_hash), 0, 0)
         get_pkt = get_header+get_chunk_hash
         sock.sendto(get_pkt, from_addr)
 
-    elif Type == 3:
+    elif Type == PeerPacketType.DATA:
         # received a DATA pkt
         ex_received_chunk[ex_downloading_chunkhash] += data
 
         # send back ACK
-        ack_pkt = struct.pack("!HBBHHII", 52305, 35,  4, HEADER_LEN, HEADER_LEN, 0, Seq)
+        ack_pkt = struct.pack("!HBBHHII", 52305, MY_TEAM,  4,
+                              HEADER_LEN, HEADER_LEN, 0, Seq)
         sock.sendto(ack_pkt, from_addr)
-        
+
         # see if finished
         if len(ex_received_chunk[ex_downloading_chunkhash]) == CHUNK_DATA_SIZE:
             # finished downloading this chunkdata!
@@ -153,7 +170,7 @@ def process_inbound_udp(sock):
             received_chunkhash_str = sha1.hexdigest()
             print(f"Expected chunkhash: {ex_downloading_chunkhash}")
             print(f"Received chunkhash: {received_chunkhash_str}")
-            success = ex_downloading_chunkhash==received_chunkhash_str
+            success = ex_downloading_chunkhash == received_chunkhash_str
             print(f"Successful received: {success}")
             if success:
                 print("Congrats! You have completed the example!")
@@ -164,9 +181,10 @@ def process_inbound_udp(sock):
 def process_user_input(sock):
     command, chunkf, outf = input().split(' ')
     if command == 'DOWNLOAD':
-        process_download(sock ,chunkf, outf)
+        process_download(sock, chunkf, outf)
     else:
         pass
+
 
 def peer_run(config):
     addr = (config.ip, config.port)
@@ -174,7 +192,7 @@ def peer_run(config):
 
     try:
         while True:
-            ready = select.select([sock, sys.stdin],[],[], 0.1)
+            ready = select.select([sock, sys.stdin], [], [], 0.1)
             read_ready = ready[0]
             if len(read_ready) > 0:
                 if sock in read_ready:
@@ -182,7 +200,7 @@ def peer_run(config):
                 if sys.stdin in read_ready:
                     process_user_input(sock)
             else:
-                # No pkt nor input arrives during this period 
+                # No pkt nor input arrives during this period
                 pass
     except KeyboardInterrupt:
         pass
@@ -201,11 +219,18 @@ if __name__ == '__main__':
         The timeout will be set when running test scripts. PLEASE do not change timeout if it set.
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument('-p', type=str, help='<peerfile>     The list of all peers', default='nodes.map')
-    parser.add_argument('-c', type=str, help='<chunkfile>    Pickle dumped dictionary {chunkhash: chunkdata}')
-    parser.add_argument('-m', type=int, help='<maxconn>      Max # of concurrent sending')
-    parser.add_argument('-i', type=int, help='<identity>     Which peer # am I?')
-    parser.add_argument('-v', type=int, help='verbose level', default=0)
+    parser.add_argument(
+        '-p', type=str, help='<peerfile>     The list of all peers', default='example/ex_nodes_map')
+    parser.add_argument(
+        '-c', type=str, help='<chunkfile>    Pickle dumped dictionary {chunkhash: chunkdata}',
+        default="example/data2.fragment")
+    parser.add_argument(
+        '-m', type=int, help='<maxconn>      Max # of concurrent sending',
+        default=1)
+    parser.add_argument(
+        '-i', type=int, help='<identity>     Which peer # am I?',
+        default=1)
+    parser.add_argument('-v', type=int, help='verbose level', default=3)
     parser.add_argument('-t', type=int, help="pre-defined timeout", default=0)
     args = parser.parse_args()
 
