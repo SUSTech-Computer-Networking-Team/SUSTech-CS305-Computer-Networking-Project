@@ -6,6 +6,12 @@ class PeerPacketType(Enum):
     DATA = 3
     ACK = 4
     DENIED = 5
+    # def get_strategy(self):
+    #     if self==PeerPacketType.WHOHAS:
+    #         return whoHasStrategy
+
+# def whoHasStrategy()
+
 
 from peer_constant import *
 

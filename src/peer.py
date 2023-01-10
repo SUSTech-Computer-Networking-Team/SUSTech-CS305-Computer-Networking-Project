@@ -28,52 +28,10 @@ ex_downloading_chunkhash = ""
 
 this_peer_state = PeerState()
 
-def process_download(sock, chunkfile, outputfile):
-    '''
-    receiver part
-    if DOWNLOAD is used, the peer will keep getting files until it is done
-    '''
-    # print('PROCESS GET SKELETON CODE CALLED.  Fill me in! I\'ve been doing! (', chunkfile, ',     ', outputfile, ')')
-    global ex_output_file
-    global ex_received_chunk
-    global ex_downloading_chunkhash
-
-    ex_output_file = outputfile
-    # Step 1: read chunkhash to be downloaded from chunkfile
-    download_hash = bytes()
-    with open(chunkfile, 'r') as cf:
-        index, datahash_str = cf.readline().strip().split(" ")
-        ex_received_chunk[datahash_str] = bytes()
-        ex_downloading_chunkhash = datahash_str
-
-        # hex_str to bytes
-        datahash = bytes.fromhex(datahash_str)
-        download_hash = download_hash + datahash
-
-    # Step2: make WHOHAS pkt
-    # |2byte magic|1byte type |1byte team|
-    # |2byte  header len  |2byte pkt len |
-    # |      4byte  seq                  |
-    # |      4byte  ack                  |
-    whohas_header = struct.pack(
-        "!HBBHHII", 52305, MY_TEAM, 0, HEADER_LEN, HEADER_LEN+len(download_hash), 0, 0)
-    whohas_pkt = whohas_header + download_hash
-    info = struct.unpack("!HBBHHII", whohas_header)
-
-    # Step3: flooding whohas to all peers in peer list
-    peer_list = config.peers
-    for p in peer_list:
-        if int(p[0]) != config.identity:
-            sock.sendto(whohas_pkt, (p[1], int(p[2])))
-            print(f"send whohas to ({p[1]}:{p[2]}) with {info}")
-
-
-
 def process_inbound_udp(sock):
     # Receive pkt
     global config
     global ex_sending_chunkhash
-
     pkt, from_addr = sock.recvfrom(BUF_SIZE)
     Magic, Team, Type, hlen, plen, Seq, Ack = struct.unpack(
         "!HBBHHII", pkt[:HEADER_LEN])  # add !
@@ -83,10 +41,12 @@ def process_inbound_udp(sock):
     Type = PeerPacketType(Type)
     # sender part
     if Type == PeerPacketType.WHOHAS:
+        LOGGER.debug("接收到WHOHAS询问。")
         # 判断是否超过最大发送次数
-        if len(this_peer_state.sending_connections) >= config.max_connections:
+        if len(this_peer_state.sending_connections) >= config.max_conn:
+            LOGGER.warn("连接数量超过最大限制，发送拒绝报文。")
             # sock.send
-            # TODO denied seq和ack可能不对。
+            # denied seq和ack都是0就行。
             denyPacket = PeerPacket(type_code=PeerPacketType.DENIED.value)
             sock.sendto(denyPacket.make_binary(), from_addr)
 
@@ -178,6 +138,46 @@ def process_inbound_udp(sock):
                 print("Example fails. Please check the example files carefully.")
 
 
+def process_download(sock, chunkfile, outputfile):
+    '''
+    receiver part
+    if DOWNLOAD is used, the peer will keep getting files until it is done
+    '''
+    # print('PROCESS GET SKELETON CODE CALLED.  Fill me in! I\'ve been doing! (', chunkfile, ',     ', outputfile, ')')
+    global ex_output_file
+    global ex_received_chunk
+    global ex_downloading_chunkhash
+
+    ex_output_file = outputfile
+    # Step 1: read chunkhash to be downloaded from chunkfile
+    download_hash = bytes()
+    with open(chunkfile, 'r') as cf:
+        index, datahash_str = cf.readline().strip().split(" ")
+        ex_received_chunk[datahash_str] = bytes()
+        ex_downloading_chunkhash = datahash_str
+
+        # hex_str to bytes
+        datahash = bytes.fromhex(datahash_str)
+        download_hash = download_hash + datahash
+
+    # Step2: make WHOHAS pkt
+    # |2byte magic|1byte type |1byte team|
+    # |2byte  header len  |2byte pkt len |
+    # |      4byte  seq                  |
+    # |      4byte  ack                  |
+    whohas_header = struct.pack(
+        "!HBBHHII", 52305, MY_TEAM, 0, HEADER_LEN, HEADER_LEN+len(download_hash), 0, 0)
+    whohas_pkt = whohas_header + download_hash
+    info = struct.unpack("!HBBHHII", whohas_header)
+
+    # Step3: flooding whohas to all peers in peer list
+    peer_list = config.peers
+    for p in peer_list:
+        if int(p[0]) != config.identity:
+            sock.sendto(whohas_pkt, (p[1], int(p[2])))
+            print(f"send whohas to ({p[1]}:{p[2]}) with {info}")
+            
+
 def process_user_input(sock):
     command, chunkf, outf = input().split(' ')
     if command == 'DOWNLOAD':
@@ -208,6 +208,39 @@ def peer_run(config):
         sock.close()
 
 
+from datetime import datetime
+_current_time = f"_{datetime.now().strftime('%Y-%m-%d-%H-%M')}"
+import logging
+LOGGER:logging.Logger = None
+def start_logger(verbose_level, id):
+    global LOGGER
+    LOGGER = logging.getLogger(f"SRC PEER{id}_LOGGER")
+    LOGGER.setLevel(logging.DEBUG)
+    formatter = logging.Formatter(fmt="%(asctime)s -+- %(name)s -+- %(levelname)s -+- %(message)s")
+    if verbose_level > 0:
+        if verbose_level == 1:
+            sh_level = logging.WARNING
+        elif verbose_level == 2:
+            sh_level = logging.INFO
+        elif verbose_level == 3:
+            sh_level = logging.DEBUG
+        else: 
+            sh_level = logging.INFO
+        sh = logging.StreamHandler(stream=sys.stdout)
+        sh.setLevel(level = sh_level)
+        sh.setFormatter(formatter)
+        LOGGER.addHandler(sh)
+    # 我们自己写的代码的 logger, 存放在src-log而不是log目录下，方便查看
+    log_dir = "src-log"
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    fh = logging.FileHandler(filename=os.path.join(log_dir, f"src-peer{id}{_current_time}.log"), mode="w")
+
+    fh.setLevel(level=logging.DEBUG)
+    fh.setFormatter(formatter)
+    LOGGER.addHandler(fh)
+    LOGGER.info("Start logging")
+
 if __name__ == '__main__':
     """
     -p: Peer list file, it will be in the form "*.map" like nodes.map.
@@ -233,6 +266,7 @@ if __name__ == '__main__':
     parser.add_argument('-v', type=int, help='verbose level', default=3)
     parser.add_argument('-t', type=int, help="pre-defined timeout", default=0)
     args = parser.parse_args()
-
+    start_logger(args.v, args.i)
+    
     config = bt_utils.BtConfig(args)
     peer_run(config)
