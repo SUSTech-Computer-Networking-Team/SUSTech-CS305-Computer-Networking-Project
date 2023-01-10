@@ -28,6 +28,17 @@ ex_downloading_chunkhash = ""
 
 this_peer_state = PeerState()
 
+EstimateRTT = 0
+DevRTT = 0
+
+def self_adapted_RTT(EstimateRTT_old, SampleRTT, DevRTT_old):
+    alpha = 0.125
+    beta = 0.25
+    EstimateRTT_new = (1 - alpha) * EstimateRTT_old + alpha * SampleRTT
+    DevRTT_new = (1 - beta) * DevRTT_old + beta * abs(SampleRTT - EstimateRTT_new)
+    TimeoutIntervel = EstimateRTT_new + 4 * DevRTT_new
+    return EstimateRTT_new, DevRTT_new, TimeoutIntervel
+
 def process_inbound_udp(sock):
     # Receive pkt
     global config
