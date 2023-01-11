@@ -50,7 +50,7 @@ def re_slow_start(ex_cwnd):
 
 
 class TimeoutEstimator:
-    def __init__(self, alpha=1.0/8, beta=1.0/8, sigma=4):
+    def __init__(self, alpha=1.0 / 8, beta=1.0 / 8, sigma=4):
         self.alpha = alpha
         self.beta = beta
         self.sigma = sigma
@@ -72,9 +72,7 @@ def process_inbound_udp(sock):
 
     # Receive pkt
     pkt, from_addr = sock.recvfrom(BUF_SIZE)
-    Magic, Team, Type, hlen, plen, Seq, Ack = struct.unpack(
-        "!HBBHHII", pkt[:HEADER_LEN])  # add !
-    data = pkt[HEADER_LEN:]
+    peer_packet = PeerPacket.build(pkt)
 
     # judge the peer connection
     this_peer_state.cur_connection = this_peer_state.findConnection(from_addr)
@@ -82,14 +80,15 @@ def process_inbound_udp(sock):
         this_peer_state.cur_connection = this_peer_state.addConnection(from_addr)
 
     print(
-        f"prepared to send to {this_peer_state.cur_connection.connect_peer} with [team:{Team}, type:{Type}, Seq:{Seq}, Ack:{Ack}")
+        f"prepared to send to {this_peer_state.cur_connection.connect_peer} with [team:{peer_packet.Team}, type:{peer_packet.Type}, "
+        f"Seq:{peer_packet.Seq}, Ack:{peer_packet.Ack}")
 
     ex_sending_chunkhash = this_peer_state.cur_connection.ex_sending_chunkhash
 
-    Type = PeerPacketType(Type)
+    packet_type = PeerPacketType(peer_packet.Type)
 
     # ----------------------------- sender part -------------------------------------
-    if Type == PeerPacketType.WHOHAS:
+    if packet_type == PeerPacketType.WHOHAS:
         LOGGER.debug("接收到WHOHAS询问。")
         # 判断是否超过最大发送次数
         if len(this_peer_state.sending_connections) >= config.max_conn:
@@ -103,7 +102,7 @@ def process_inbound_udp(sock):
 
         # received an WHOHAS pkt
         # see what chunk the sender has
-        whohas_chunk_hash = data[:20]
+        whohas_chunk_hash = peer_packet.data[:20]
         # bytes to hex_str
         chunkhash_str = bytes.hex(whohas_chunk_hash)
         this_peer_state.cur_connection.ex_sending_chunkhash = chunkhash_str
@@ -117,7 +116,7 @@ def process_inbound_udp(sock):
             ihave_pkt = ihave_header + whohas_chunk_hash
             sock.sendto(ihave_pkt, from_addr)
 
-    elif Type == PeerPacketType.GET:
+    elif packet_type == PeerPacketType.GET:
         # received a GET pkt
 
         # 感觉要改，识别 GET 里真正申请的部分
@@ -128,16 +127,16 @@ def process_inbound_udp(sock):
             "!HBBHHII", 52305, MY_TEAM, 3, HEADER_LEN, HEADER_LEN, 1, 0)
         sock.sendto(data_header + chunk_data, from_addr)
 
-    elif Type == PeerPacketType.ACK:
+    elif packet_type == PeerPacketType.ACK:
         # received an ACK pkt
 
-        ack_num = Ack
-        if (ack_num) * MAX_PAYLOAD >= CHUNK_DATA_SIZE:
+        ack_num = peer_packet.Ack
+        if ack_num * MAX_PAYLOAD >= CHUNK_DATA_SIZE:
             # finished
             print(f"finished sending {ex_sending_chunkhash} to {from_addr}")
             pass
         else:
-            left = (ack_num) * MAX_PAYLOAD
+            left = ack_num * MAX_PAYLOAD
             right = min((ack_num + 1) * MAX_PAYLOAD, CHUNK_DATA_SIZE)
             next_data = config.haschunks[ex_sending_chunkhash][left: right]
 
@@ -147,10 +146,10 @@ def process_inbound_udp(sock):
             sock.sendto(data_header + next_data, from_addr)
 
     # ------------------------------- receiver part --------------------------------
-    elif Type == PeerPacketType.IHAVE:
+    elif packet_type == PeerPacketType.IHAVE:
         # received an IHAVE pkt
         # see what chunk the sender has
-        get_chunk_hash = data[:20]
+        get_chunk_hash = peer_packet.data[:20]
 
         # send back GET pkt
         get_header = struct.pack(
@@ -160,42 +159,40 @@ def process_inbound_udp(sock):
 
         # update connection info
 
-
-
-    elif Type == PeerPacketType.DATA:
-        # received a DATA pkt
-        ex_received_chunk[ex_downloading_chunkhash] += data
-
-        # send back ACK
-        ack_pkt = struct.pack("!HBBHHII", 52305, MY_TEAM, 4,
-                              HEADER_LEN, HEADER_LEN, 0, Seq)
-        sock.sendto(ack_pkt, from_addr)
-
-        # see if finished
-        if len(ex_received_chunk[ex_downloading_chunkhash]) == CHUNK_DATA_SIZE:
-            # finished downloading this chunkdata!
-            # dump your received chunk to file in dict form using pickle
-            with open(ex_output_file, "wb") as wf:
-                pickle.dump(ex_received_chunk, wf)
-
-            # add to this peer's haschunk:
-            config.haschunks[ex_downloading_chunkhash] = ex_received_chunk[ex_downloading_chunkhash]
-
-            # you need to print "GOT" when finished downloading all chunks in a DOWNLOAD file
-            print(f"GOT {ex_output_file}")
-
-            # The following things are just for illustration, you do not need to print out in your design.
-            sha1 = hashlib.sha1()
-            sha1.update(ex_received_chunk[ex_downloading_chunkhash])
-            received_chunkhash_str = sha1.hexdigest()
-            print(f"Expected chunkhash: {ex_downloading_chunkhash}")
-            print(f"Received chunkhash: {received_chunkhash_str}")
-            success = ex_downloading_chunkhash == received_chunkhash_str
-            print(f"Successful received: {success}")
-            if success:
-                print("Congrats! You have completed the example!")
-            else:
-                print("Example fails. Please check the example files carefully.")
+    # elif type == PeerPacketType.DATA:
+    #     # received a DATA pkt
+    #     ex_received_chunk[ex_downloading_chunkhash] += data
+    #
+    #     # send back ACK
+    #     ack_pkt = struct.pack("!HBBHHII", 52305, MY_TEAM, 4,
+    #                           HEADER_LEN, HEADER_LEN, 0, Seq)
+    #     sock.sendto(ack_pkt, from_addr)
+    #
+    #     # see if finished
+    #     if len(ex_received_chunk[ex_downloading_chunkhash]) == CHUNK_DATA_SIZE:
+    #         # finished downloading this chunkdata!
+    #         # dump your received chunk to file in dict form using pickle
+    #         with open(ex_output_file, "wb") as wf:
+    #             pickle.dump(ex_received_chunk, wf)
+    #
+    #         # add to this peer's haschunk:
+    #         config.haschunks[ex_downloading_chunkhash] = ex_received_chunk[ex_downloading_chunkhash]
+    #
+    #         # you need to print "GOT" when finished downloading all chunks in a DOWNLOAD file
+    #         print(f"GOT {ex_output_file}")
+    #
+    #         # The following things are just for illustration, you do not need to print out in your design.
+    #         sha1 = hashlib.sha1()
+    #         sha1.update(ex_received_chunk[ex_downloading_chunkhash])
+    #         received_chunkhash_str = sha1.hexdigest()
+    #         print(f"Expected chunkhash: {ex_downloading_chunkhash}")
+    #         print(f"Received chunkhash: {received_chunkhash_str}")
+    #         success = ex_downloading_chunkhash == received_chunkhash_str
+    #         print(f"Successful received: {success}")
+    #         if success:
+    #             print("Congrats! You have completed the example!")
+    #         else:
+    #             print("Example fails. Please check the example files carefully.")
 
 
 def process_download(sock, chunkfile, outputfile):
