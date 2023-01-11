@@ -1,4 +1,8 @@
 from enum import Enum
+
+from peer_constant import BUF_SIZE, CHUNK_DATA_SIZE, HEADER_LEN, MAX_PAYLOAD, MY_TEAM
+
+
 class PeerPacketType(Enum):
     WHOHAS = 0
     IHAVE = 1
@@ -10,6 +14,7 @@ class PeerPacketType(Enum):
     #     if self==PeerPacketType.WHOHAS:
     #         return whoHasStrategy
 
+
 # def whoHasStrategy()
 
 
@@ -17,7 +22,8 @@ from peer_constant import *
 
 
 class PeerPacket:
-    def __init__(self, magic_num=52305, team_num=MY_TEAM, type_code=0, header_len=HEADER_LEN, pkt_len=HEADER_LEN, seq_num=0, ack_num=0, data=bytes()) -> None:
+    def __init__(self, magic_num=52305, team_num=MY_TEAM, type_code=0, header_len=HEADER_LEN, pkt_len=HEADER_LEN,
+                 seq_num=0, ack_num=0, data=bytes()) -> None:
         self.magic_num = magic_num
         self.team_num = team_num
         self.type_code = type_code
@@ -30,7 +36,7 @@ class PeerPacket:
     def make_binary(self):
         return struct.pack("!HBBHHII", self.magic_num, self.team_num,
                            self.type_code, self.header_len, self.pkt_len,
-                           self.seq_num, self.ack_num)+self.data
+                           self.seq_num, self.ack_num) + self.data
 
     @staticmethod
     def build(binary):
