@@ -18,4 +18,11 @@ class TcpLikeConnection:
         self.receiving_peer = receiving_peer
         self.sending_seq_num = sending_seqnum  
         self.receiving_seq_num = receiving_seq_num
+        self.ACK_counter = 0
+
+    def ACK_counter():
+        
+        if self.ACK_counter >= 4:
+            return retransmit_enable
+
 

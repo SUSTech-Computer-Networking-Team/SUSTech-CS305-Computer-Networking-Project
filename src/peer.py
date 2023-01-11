@@ -30,6 +30,7 @@ this_peer_state = PeerState()
 
 EstimateRTT = 0
 DevRTT = 0
+TimeoutIntervel = 0
 
 def self_adapted_RTT(EstimateRTT_old, SampleRTT, DevRTT_old):
     alpha = 0.125
