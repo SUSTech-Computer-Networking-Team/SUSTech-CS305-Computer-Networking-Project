@@ -2,10 +2,41 @@ class PeerState:
     def __init__(self) -> None:    
         self.receiving_connections = []
         self.sending_connections = []
+        self.connections = []
+        self.cur_connection = None
+        self.ack = 0
+
+        # todo
+        # self.peer_num
+
+    def findConnection(self, addr):
+        for con in self.connections:
+            if addr == con.connect_peer:
+                return con
+        return None
+
+    def addConnection(self, addr):
+        newConnection = TcpLikeConnection(connect_peer=addr)
+        self.connections.append(newConnection)
+        return newConnection
+
+    def removeConnection(self, addr):
+        for i in range(self.connections):
+            if addr == self.connections[i].connect_peer:
+                self.connections.pop(i)
+                return True
+        return False
         
 
+# class DownloadMission:
+#     def __init__(self, eof, erc, edc):
+#         self.ex_output_file = eof
+#         self.ex_received_chunk = erc
+#         self.ex_downloading_chunkhash = edc
+
+
 class TcpLikeConnection:
-    def __init__(self, sending_peer=0, receiving_peer=1, sending_seqnum=0, receiving_seq_num=0) -> None:
+    def __init__(self, sending_peer=0, receiving_peer=1, sending_seqnum=0, receiving_seq_num=0, connect_peer = ()) -> None:
         """TCP 连接状态
 
         Args:
@@ -16,6 +47,9 @@ class TcpLikeConnection:
         """
         self.sending_peer = sending_peer
         self.receiving_peer = receiving_peer
-        self.sending_seq_num = sending_seqnum  
-        self.receiving_seq_num = receiving_seq_num
+        self.connect_peer = connect_peer
 
+        # self.sending_seq_num = sending_seqnum  
+        # self.receiving_seq_num = receiving_seq_num
+        self.ex_sending_chunkhash = "" # sending mission
+        self.ex_downloading_chunkhash = ""
