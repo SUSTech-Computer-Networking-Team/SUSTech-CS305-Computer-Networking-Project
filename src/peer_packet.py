@@ -1,5 +1,7 @@
 from enum import Enum
 
+from peer_constant import BUF_SIZE, CHUNK_DATA_SIZE, HEADER_LEN, MAX_PAYLOAD, MY_TEAM
+
 
 class PeerPacketType(Enum):
     WHOHAS = 0
