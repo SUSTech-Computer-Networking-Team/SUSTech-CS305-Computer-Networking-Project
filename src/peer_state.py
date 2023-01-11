@@ -4,6 +4,7 @@ class PeerState:
         self.sending_connections = []
         self.connections = []
         self.cur_connection = None
+        self.last_connection = None
         self.ack = 0
 
         # todo
@@ -49,18 +50,29 @@ class TcpLikeConnection:
         self.receiving_peer = receiving_peer
         self.connect_peer = connect_peer
 
-        self.sending_seq_num = sending_seqnum  
+        # self.sending_seq_num = sending_seqnum  
         self.receiving_seq_num = receiving_seq_num
+        self.seq_old = 0
+
+        # 记录本次发送的报文头信息，以及数据
+        self.header_len = 0
+        self.pkt_len = 0
+        self.ack_num = 0
+        self.data = 0
+        self.seq_num = 0
 
         self.ex_sending_chunkhash = "" # sending mission
         self.ex_downloading_chunkhash = ""
-        
-        self.ACK_counter = 0
 
-    def ACK_counter():
-        
-        if self.ACK_counter >= 4:
-            return retransmit_enable
+        self.ack_counter = 0
+
+    def Ack_Cnt():
+        if self.seq_old == self.receiving_seq_num:
+            ack_counter += 1
+        else:
+            self.ack_counter == 0
+            self.seq_old = self.receiving_seq_num
+        return self.ack_counter
 
         
 

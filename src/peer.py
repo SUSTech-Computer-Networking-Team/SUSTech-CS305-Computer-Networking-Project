@@ -117,7 +117,12 @@ def process_inbound_udp(sock):
     elif Type == PeerPacketType.ACK:
         # received an ACK pkt
 
-        ack_num = Ack
+        # ack_num = Ack
+        # this_peer_state.cur_connection.receiving_seq_num = Seq
+        # dupACKCnt = this_peer_state.cur_connection.Ack_Cnt()
+        # if dupACKCnt >= 3:
+
+
         if (ack_num) * MAX_PAYLOAD >= CHUNK_DATA_SIZE:
             # finished
             print(f"finished sending {ex_sending_chunkhash} to {from_addr}")
@@ -126,6 +131,12 @@ def process_inbound_udp(sock):
             left = (ack_num) * MAX_PAYLOAD
             right = min((ack_num + 1) * MAX_PAYLOAD, CHUNK_DATA_SIZE)
             next_data = config.haschunks[ex_sending_chunkhash][left: right]
+
+            # # 记录下本次发包的信息，包括seq、ack、data等， 方便下一次需要重传时打包到一起
+            # this_peer_state.cur_connection.header_len = HEADER_LEN
+            # this_peer_state.cur_connection.pkt_len = HEADER_LEN + len(next_data)
+            # this_peer_state.cur_connection.ack_num = ack_num + 1
+            # this_peer_state.cur_connection.seq_num = 0
 
             # send next data
             data_header = struct.pack(
