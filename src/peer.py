@@ -90,16 +90,6 @@ def process_inbound_udp(sock):
     # ----------------------------- sender part -------------------------------------
     if packet_type == PeerPacketType.WHOHAS:
         LOGGER.debug("接收到WHOHAS询问。")
-        # 判断是否超过最大发送次数
-        if len(this_peer_state.sending_connections) >= config.max_conn:
-            LOGGER.warning("连接数量超过最大限制，发送拒绝报文。")
-            # sock.send
-            # denied seq和ack都是0就行。
-            deny_packet = PeerPacket(type_code=PeerPacketType.DENIED.value)
-            sock.sendto(deny_packet.make_binary(), from_addr)
-            this_peer_state.removeConnection(from_addr)
-            return  # added
-
         # received an WHOHAS pkt
         # see what chunk the sender has
         whohas_chunk_hash = peer_packet.data[:20]
@@ -118,6 +108,15 @@ def process_inbound_udp(sock):
 
     elif packet_type == PeerPacketType.GET:
         # received a GET pkt
+        # 判断是否超过最大发送次数
+        if len(this_peer_state.sending_connections) >= config.max_conn:
+            LOGGER.warning("连接数量超过最大限制，发送拒绝报文。")
+            # sock.send
+            # denied seq和ack都是0就行。
+            deny_packet = PeerPacket(type_code=PeerPacketType.DENIED.value)
+            sock.sendto(deny_packet.make_binary(), from_addr)
+            this_peer_state.removeConnection(from_addr)
+            return  # added
 
         # 感觉要改，识别 GET 里真正申请的部分
         chunk_data = config.haschunks[ex_sending_chunkhash][:MAX_PAYLOAD]
