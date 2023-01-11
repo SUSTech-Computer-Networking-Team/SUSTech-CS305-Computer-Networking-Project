@@ -47,8 +47,14 @@ class TcpLikeConnection:
         """
         self.sending_peer = sending_peer
         self.receiving_peer = receiving_peer
+        self.connect_peer = connect_peer
+
         self.sending_seq_num = sending_seqnum  
         self.receiving_seq_num = receiving_seq_num
+
+        self.ex_sending_chunkhash = "" # sending mission
+        self.ex_downloading_chunkhash = ""
+        
         self.ACK_counter = 0
 
     def ACK_counter():
@@ -56,9 +62,7 @@ class TcpLikeConnection:
         if self.ACK_counter >= 4:
             return retransmit_enable
 
-        self.connect_peer = connect_peer
+        
 
-        # self.sending_seq_num = sending_seqnum  
-        # self.receiving_seq_num = receiving_seq_num
-        self.ex_sending_chunkhash = "" # sending mission
-        self.ex_downloading_chunkhash = ""
+       
+        
