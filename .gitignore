@@ -1,5 +1,5 @@
-test/*/*.fragment
-test/*/*/*.fragment
+# test/*/*.fragment
+# test/*/*/*.fragment
 *.pyc
 log/
 *.log

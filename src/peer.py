@@ -22,6 +22,9 @@ Please refer to the example files - example/dumpreceiver.py and example/dumpsend
 """
 
 config = None
+
+# todo: 要实现 concurrency 的话，这些 ex 应该都得改
+
 ex_output_file = None
 ex_received_chunk = dict()
 ex_downloading_chunkhash = ""
@@ -50,6 +53,7 @@ def process_inbound_udp(sock):
     print(f"prepared to send [team:{Team}, type:{Type}, Seq:{Seq}, Ack:{Ack}")
 
     Type = PeerPacketType(Type)
+
     # sender part
     if Type == PeerPacketType.WHOHAS:
         LOGGER.debug("接收到WHOHAS询问。")
@@ -60,6 +64,7 @@ def process_inbound_udp(sock):
             # denied seq和ack都是0就行。
             denyPacket = PeerPacket(type_code=PeerPacketType.DENIED.value)
             sock.sendto(denyPacket.make_binary(), from_addr)
+            # 不加return？
 
         # received an WHOHAS pkt
         # see what chunk the sender has
@@ -78,6 +83,8 @@ def process_inbound_udp(sock):
 
     elif Type == PeerPacketType.GET:
         # received a GET pkt
+
+        # 感觉要改，识别 GET 里真正申请的部分
         chunk_data = config.haschunks[ex_sending_chunkhash][:MAX_PAYLOAD]
 
         # send back DATA
@@ -87,6 +94,9 @@ def process_inbound_udp(sock):
 
     elif Type == PeerPacketType.ACK:
         # received an ACK pkt
+
+        #  todo change ex_sending_chunkhash
+
         ack_num = Ack
         if (ack_num) * MAX_PAYLOAD >= CHUNK_DATA_SIZE:
             # finished
@@ -94,7 +104,7 @@ def process_inbound_udp(sock):
             pass
         else:
             left = (ack_num) * MAX_PAYLOAD
-            right = min((ack_num+1)*MAX_PAYLOAD, CHUNK_DATA_SIZE)
+            right = min((ack_num + 1) * MAX_PAYLOAD, CHUNK_DATA_SIZE)
             next_data = config.haschunks[ex_sending_chunkhash][left: right]
             # send next data
             data_header = struct.pack(
@@ -109,8 +119,8 @@ def process_inbound_udp(sock):
 
         # send back GET pkt
         get_header = struct.pack(
-            "!HBBHHII", 52305, MY_TEAM, 2, HEADER_LEN, HEADER_LEN+len(get_chunk_hash), 0, 0)
-        get_pkt = get_header+get_chunk_hash
+            "!HBBHHII", 52305, MY_TEAM, 2, HEADER_LEN, HEADER_LEN + len(get_chunk_hash), 0, 0)
+        get_pkt = get_header + get_chunk_hash
         sock.sendto(get_pkt, from_addr)
 
     elif Type == PeerPacketType.DATA:
@@ -155,6 +165,7 @@ def process_download(sock, chunkfile, outputfile):
     if DOWNLOAD is used, the peer will keep getting files until it is done
     '''
     # print('PROCESS GET SKELETON CODE CALLED.  Fill me in! I\'ve been doing! (', chunkfile, ',     ', outputfile, ')')
+    # todo 
     global ex_output_file
     global ex_received_chunk
     global ex_downloading_chunkhash
@@ -177,7 +188,7 @@ def process_download(sock, chunkfile, outputfile):
     # |      4byte  seq                  |
     # |      4byte  ack                  |
     whohas_header = struct.pack(
-        "!HBBHHII", 52305, MY_TEAM, 0, HEADER_LEN, HEADER_LEN+len(download_hash), 0, 0)
+        "!HBBHHII", 52305, MY_TEAM, 0, HEADER_LEN, HEADER_LEN + len(download_hash), 0, 0)
     whohas_pkt = whohas_header + download_hash
     info = struct.unpack("!HBBHHII", whohas_header)
 
