@@ -131,6 +131,7 @@ def process_inbound_udp(sock):
         # received an ACK pkt
 
         ack_num = peer_packet.Ack
+
         if ack_num * MAX_PAYLOAD >= CHUNK_DATA_SIZE:
             # finished
             print(f"finished sending {ex_sending_chunkhash} to {from_addr}")

@@ -10,6 +10,9 @@ class CongestionState(Enum):
 
 
 class CongestionController:
+    """
+    作为sender的时候，自己控制自己的拥塞窗口。
+    """
     def __init__(self, init_cwnd=1, init_ssthresh=1000) -> None:
         self.congestion_window: float = init_cwnd
         self.slow_thresh: float = init_ssthresh

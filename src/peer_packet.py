@@ -1,3 +1,4 @@
+import struct
 from enum import Enum
 
 from peer_constant import BUF_SIZE, CHUNK_DATA_SIZE, HEADER_LEN, MAX_PAYLOAD, MY_TEAM
@@ -10,15 +11,6 @@ class PeerPacketType(Enum):
     DATA = 3
     ACK = 4
     DENIED = 5
-    # def get_strategy(self):
-    #     if self==PeerPacketType.WHOHAS:
-    #         return whoHasStrategy
-
-
-# def whoHasStrategy()
-
-
-from peer_constant import *
 
 
 class PeerPacket:
@@ -40,7 +32,7 @@ class PeerPacket:
 
     @staticmethod
     def build(binary):
-        Magic, Team, Type, hlen, plen, Seq, Ack = struct.unpack(
+        magic, team, type, hlen, plen, seq, ack = struct.unpack(
             "!HBBHHII", binary[:HEADER_LEN])  # add !
         data = binary[HEADER_LEN:]
-        return PeerPacket(Magic, Team, Type, hlen, plen, Seq, Ack, data)
+        return PeerPacket(magic, team, type, hlen, plen, seq, ack, data)
