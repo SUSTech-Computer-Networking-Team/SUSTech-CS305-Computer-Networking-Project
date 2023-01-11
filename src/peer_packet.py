@@ -25,6 +25,9 @@ class PeerPacket:
         self.ack_num = ack_num
         self.data = data
 
+    def __str__(self) -> str:
+        return self.__dict__.__str__()
+
     def make_binary(self):
         return struct.pack("!HBBHHII", self.magic_num, self.team_num,
                            self.type_code, self.header_len, self.pkt_len,

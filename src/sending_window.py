@@ -8,6 +8,8 @@ from util.simsocket import SimSocket
 
 
 class TimeoutEstimator:
+    def __str__(self) -> str:
+        return self.__dict__.__str__()
     def __init__(self, alpha: float = 1.0 / 8, beta: float = 1.0 / 8, sigma: float = 4, init_rtt: float = 1,
                  update_interval: int = 1):
         """超时估计器。参考TCP的计算公式。
@@ -55,8 +57,8 @@ class TimedPacket:
         self.send_time = send_time
 
 
-class SendingWindow:
-    def __init__(self, timeout_estimator: TimeoutEstimator, init_seq=0, init_win_size=1, ) -> None:
+class TcpSendingWindow:
+    def __init__(self, timeout_estimator: TimeoutEstimator = TimeoutEstimator(), init_seq=0, init_win_size=1, ) -> None:
         self.sent_pkt_list: List[TimedPacket] = []
         self.front_seq = init_seq
         self.window_size = init_win_size  # 以packet为单位
@@ -72,7 +74,7 @@ class SendingWindow:
         """当收到新的ACK报文时，尝试更新发送窗口的状态。
         如果收到的ACK报文是重复的（表明接受方没有收到窗口中的packet），返回False，否则返回True。
         Args:
-            ack (int): 单位是packet, 不是Byte。
+            ack (int): 单位是packet, 不是Byte。注意ack是期待发送的packet的序号。
         Returns:
             bool: 是否是 Duplicated ACK。 如果是，外面还要根据情况看看要不要快速重传。
         """
