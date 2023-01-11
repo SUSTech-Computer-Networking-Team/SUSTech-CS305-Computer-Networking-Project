@@ -39,12 +39,14 @@ dupACKCnt = 0
 cwnd = 1
 sshresh = 64
 
+
 def re_slow_start(ex_cwnd):
     global dupACKCnt, cwnd, sshresh
 
     cwnd = 1
     sshresh = max(ex_cwnd / 2, 2)
     dupACKCnt = 0
+
 
 def self_adapted_RTT(EstimateRTT_old, SampleRTT, DevRTT_old):
     alpha = 0.125
@@ -53,6 +55,7 @@ def self_adapted_RTT(EstimateRTT_old, SampleRTT, DevRTT_old):
     DevRTT_new = (1 - beta) * DevRTT_old + beta * abs(SampleRTT - EstimateRTT_new)
     TimeoutIntervel = EstimateRTT_new + 4 * DevRTT_new
     return EstimateRTT_new, DevRTT_new, TimeoutIntervel
+
 
 def process_inbound_udp(sock):
     global config
@@ -67,9 +70,10 @@ def process_inbound_udp(sock):
     # judge the peer connection
     this_peer_state.cur_connection = this_peer_state.findConnection(from_addr)
     if this_peer_state.cur_connection is None:
-       this_peer_state.cur_connection = this_peer_state.addConnection(from_addr)
+        this_peer_state.cur_connection = this_peer_state.addConnection(from_addr)
 
-    print(f"prepared to send to {this_peer_state.cur_connection.connect_peer} with [team:{Team}, type:{Type}, Seq:{Seq}, Ack:{Ack}")
+    print(
+        f"prepared to send to {this_peer_state.cur_connection.connect_peer} with [team:{Team}, type:{Type}, Seq:{Seq}, Ack:{Ack}")
 
     ex_sending_chunkhash = this_peer_state.cur_connection.ex_sending_chunkhash
 
@@ -80,13 +84,13 @@ def process_inbound_udp(sock):
         LOGGER.debug("接收到WHOHAS询问。")
         # 判断是否超过最大发送次数
         if len(this_peer_state.sending_connections) >= config.max_conn:
-            LOGGER.warn("连接数量超过最大限制，发送拒绝报文。")
+            LOGGER.warning("连接数量超过最大限制，发送拒绝报文。")
             # sock.send
             # denied seq和ack都是0就行。
-            denyPacket = PeerPacket(type_code=PeerPacketType.DENIED.value)
-            sock.sendto(denyPacket.make_binary(), from_addr)
+            deny_packet = PeerPacket(type_code=PeerPacketType.DENIED.value)
+            sock.sendto(deny_packet.make_binary(), from_addr)
             this_peer_state.removeConnection(from_addr)
-            return # added
+            return  # added
 
         # received an WHOHAS pkt
         # see what chunk the sender has
@@ -99,8 +103,9 @@ def process_inbound_udp(sock):
         if chunkhash_str in config.haschunks:
             # send back IHAVE pkt
             ihave_header = struct.pack(
-                "!HBBHHII", 52305, MY_TEAM, PeerPacketType.IHAVE.value, HEADER_LEN, HEADER_LEN+len(whohas_chunk_hash), 0, 0)
-            ihave_pkt = ihave_header+whohas_chunk_hash
+                "!HBBHHII", 52305, MY_TEAM, PeerPacketType.IHAVE.value, HEADER_LEN, HEADER_LEN + len(whohas_chunk_hash),
+                0, 0)
+            ihave_pkt = ihave_header + whohas_chunk_hash
             sock.sendto(ihave_pkt, from_addr)
 
     elif Type == PeerPacketType.GET:
@@ -112,7 +117,7 @@ def process_inbound_udp(sock):
         # send back DATA
         data_header = struct.pack(
             "!HBBHHII", 52305, MY_TEAM, 3, HEADER_LEN, HEADER_LEN, 1, 0)
-        sock.sendto(data_header+chunk_data, from_addr)
+        sock.sendto(data_header + chunk_data, from_addr)
 
     elif Type == PeerPacketType.ACK:
         # received an ACK pkt
@@ -145,7 +150,7 @@ def process_inbound_udp(sock):
         sock.sendto(get_pkt, from_addr)
 
         # update connection info
-                
+
 
 
     elif Type == PeerPacketType.DATA:
@@ -153,7 +158,7 @@ def process_inbound_udp(sock):
         ex_received_chunk[ex_downloading_chunkhash] += data
 
         # send back ACK
-        ack_pkt = struct.pack("!HBBHHII", 52305, MY_TEAM,  4,
+        ack_pkt = struct.pack("!HBBHHII", 52305, MY_TEAM, 4,
                               HEADER_LEN, HEADER_LEN, 0, Seq)
         sock.sendto(ack_pkt, from_addr)
 
@@ -227,7 +232,7 @@ def process_download(sock, chunkfile, outputfile):
         if int(p[0]) != config.identity:
             sock.sendto(whohas_pkt, (p[1], int(p[2])))
             print(f"send whohas to ({p[1]}:{p[2]}) with {info}")
-            
+
 
 def process_user_input(sock):
     command, chunkf, outf = input().split(' ')
@@ -260,9 +265,13 @@ def peer_run(config):
 
 
 from datetime import datetime
+
 _current_time = f"_{datetime.now().strftime('%Y-%m-%d-%H-%M')}"
 import logging
-LOGGER:logging.Logger = None
+
+LOGGER: logging.Logger = None
+
+
 def start_logger(verbose_level, id):
     global LOGGER
     LOGGER = logging.getLogger(f"SRC PEER{id}_LOGGER")
@@ -275,10 +284,10 @@ def start_logger(verbose_level, id):
             sh_level = logging.INFO
         elif verbose_level == 3:
             sh_level = logging.DEBUG
-        else: 
+        else:
             sh_level = logging.INFO
         sh = logging.StreamHandler(stream=sys.stdout)
-        sh.setLevel(level = sh_level)
+        sh.setLevel(level=sh_level)
         sh.setFormatter(formatter)
         LOGGER.addHandler(sh)
     # 我们自己写的代码的 logger, 存放在src-log而不是log目录下，方便查看
@@ -291,6 +300,7 @@ def start_logger(verbose_level, id):
     fh.setFormatter(formatter)
     LOGGER.addHandler(fh)
     LOGGER.info("Start logging")
+
 
 if __name__ == '__main__':
     """
@@ -318,6 +328,6 @@ if __name__ == '__main__':
     parser.add_argument('-t', type=int, help="pre-defined timeout", default=0)
     args = parser.parse_args()
     start_logger(args.v, args.i)
-    
+
     config = bt_utils.BtConfig(args)
     peer_run(config)
