@@ -61,6 +61,5 @@ class TcpLikeConnection:
 
         self.ACK_counter = 0
 
-    def ACK_counter():
-        if self.ACK_counter >= 4:
-            return retransmit_enable
+
+
