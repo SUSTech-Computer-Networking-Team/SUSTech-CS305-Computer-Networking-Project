@@ -1,11 +1,12 @@
 import os
 import sys
+
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 from enum import Enum
 from peer_state import *
 from peer_packet import *
-from peer_constant import *
+from peer_constant import BUF_SIZE, CHUNK_DATA_SIZE, HEADER_LEN, MAX_PAYLOAD, MY_TEAM
 
 import pickle
 import argparse
@@ -48,13 +49,21 @@ def re_slow_start(ex_cwnd):
     dupACKCnt = 0
 
 
-def self_adapted_RTT(EstimateRTT_old, SampleRTT, DevRTT_old):
-    alpha = 0.125
-    beta = 0.25
-    EstimateRTT_new = (1 - alpha) * EstimateRTT_old + alpha * SampleRTT
-    DevRTT_new = (1 - beta) * DevRTT_old + beta * abs(SampleRTT - EstimateRTT_new)
-    TimeoutIntervel = EstimateRTT_new + 4 * DevRTT_new
-    return EstimateRTT_new, DevRTT_new, TimeoutIntervel
+class TimeoutEstimator:
+    def __init__(self, alpha=1.0/8, beta=1.0/8, sigma=4):
+        self.alpha = alpha
+        self.beta = beta
+        self.sigma = sigma
+
+        self.estimate_rtt = 0
+        self.dev_rtt = 0
+
+    def check_whether_timeout(self, time_waited):
+        return time_waited > self.estimate_rtt + self.sigma * self.dev_rtt
+
+    def update(self, sample_rtt):
+        self.estimate_rtt += self.alpha * (sample_rtt - self.estimate_rtt)
+        self.dev_rtt += self.beta * (abs(sample_rtt - self.estimate_rtt) - self.dev_rtt)
 
 
 def process_inbound_udp(sock):
