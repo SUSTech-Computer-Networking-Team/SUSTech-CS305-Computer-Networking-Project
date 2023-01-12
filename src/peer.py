@@ -135,6 +135,9 @@ def process_inbound_udp(sock):
 
         congestion_controller = this_peer_state.cur_connection.congestion_controller
         sending_wnd = this_peer_state.cur_connection.sending_wnd
+        cwnd_plot = this_peer_state.cur_connection.cwnd_plot
+        time_plot = this_peer_state.cur_connection.time_plot
+        time_plot_cnt = this_peer_state.cur_connection.time_plot_cnt
 
         ack_num = peer_packet.ack_num
 
@@ -143,14 +146,20 @@ def process_inbound_udp(sock):
             # 不是dupACK
             congestion_controller.notify_new_ack()
             sending_wnd.window_size = congestion_controller.cwnd()
+
             cwnd_plot.append(congestion_controller.cwnd())
-            counter += 1
-            time_plot.append(counter)
+            time_plot_cnt += 1
+            time_plot.append(time_plot_cnt)
 
             if ack_num * MAX_PAYLOAD >= CHUNK_DATA_SIZE:
                 # 先判断是否完成整个chunk的传输
                 # finished
                 print(f"finished sending {ex_sending_chunkhash} to {from_addr}")
+
+                # 画出cc的图
+                plt.plot(time_plot,cwnd_plo,color='green', marker='o', linestyle='dashed', linewidth=1, markersize=3)
+                plt.show()
+
                 this_peer_state.removeConnection(from_addr)
             else:
                 left = ack_num * MAX_PAYLOAD
@@ -168,9 +177,11 @@ def process_inbound_udp(sock):
             # 根据当前的controller状态，判断dupACK counter是否满足重传条件
             congestion_controller.notify_duplicate()
             sending_wnd.window_size = congestion_controller.cwnd()
+
             cwnd_plot.append(congestion_controller.cwnd())
-            counter += 1
-            time_plot.append(counter)
+            time_plot_cnt += 1
+            time_plot.append(time_plot_cnt)
+
             if congestion_controller.duplicate_ack_count >= 3:
                 # 满足重传条件
                 fast_retransmit_packet: TimedPacket = sending_wnd.fetch_data(ack_num)
