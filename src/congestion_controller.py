@@ -1,7 +1,5 @@
 from enum import Enum
 
-from peer import LOGGER
-
 
 class CongestionState(Enum):
     SLOW_START = 0
@@ -10,6 +8,13 @@ class CongestionState(Enum):
 
 
 class CongestionController:
+    def __str__(self) -> str:
+        return self.__dict__.__str__()
+
+    """
+    作为sender的时候，自己控制自己的拥塞窗口。
+    """
+
     def __init__(self, init_cwnd=1, init_ssthresh=1000) -> None:
         self.congestion_window: float = init_cwnd
         self.slow_thresh: float = init_ssthresh
@@ -40,13 +45,14 @@ class CongestionController:
     def notify_duplicate(self):
         def dup_ack():
             # 慢启动状态下dupACK，counter+1
-            # 若counter==3，进入快速回复
             if self.duplicate_ack_count < 3:
                 self.duplicate_ack_count += 1
             else:
+                # 若counter>=3，进入快速回复
                 self.slow_thresh = self.congestion_window / 2
                 self.congestion_window = self.slow_thresh + 3
                 self.state = CongestionState.FAST_RECOVERY
+
         if self.state == CongestionState.SLOW_START:
             # 慢启动状态下dupACK，counter+1
             # 若counter==3，进入快速回复
@@ -87,9 +93,9 @@ class CongestionController:
             self.state = CongestionState.CONGESTION_AVOIDANCE
         elif self.state == CongestionState.CONGESTION_AVOIDANCE:
             # 这很正常，你进入拥塞避免状态就是因为你超过了阈值。
-            LOGGER.warning("ssthresh是慢启动的阈值，其他状态下不用检查它。")
+            # LOGGER.warning("ssthresh是慢启动的阈值，其他状态下不用检查它。")
             pass
         elif self.state == CongestionState.FAST_RECOVERY:
             # 这很正常，你进入快速恢复状态的时候cwmd = ssthresh + 3，所以一定是大于ssthresh的。
-            LOGGER.warning("ssthresh是慢启动的阈值，其他状态下不用检查它。")
+            # LOGGER.warning("ssthresh是慢启动的阈值，其他状态下不用检查它。")
             pass
