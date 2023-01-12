@@ -6,6 +6,9 @@ class CongestionState(Enum):
     CONGESTION_AVOIDANCE = 1
     FAST_RECOVERY = 2
 
+    def __str__(self) -> str:
+        return self.__dict__.__str__()
+
 
 class CongestionController:
     def __str__(self) -> str:

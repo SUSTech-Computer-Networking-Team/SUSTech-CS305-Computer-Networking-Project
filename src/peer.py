@@ -17,14 +17,14 @@ import socket
 import struct
 import util.simsocket as simsocket
 import select
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 """
 This is CS305 project skeleton code.
 Please refer to the example files - example/dumpreceiver.py and example/dumpsender.py - to learn how to play with this skeleton.
 """
 
-config = None
+config: bt_utils.BtConfig = None
 
 # 为了实现并发，移动到了 TCPLikeConnection 中
 # ex_downloading_chunkhash = ""
@@ -37,6 +37,8 @@ this_peer_state = PeerState()
 cwnd_plot = []
 time_plot = []
 counter = 0
+
+contiguous_send_cnt = 10
 
 
 def check_timeout(sock: SimSocket) -> None:
@@ -89,7 +91,7 @@ def process_inbound_udp(sock: SimSocket):
         # bytes to hex_str
 
         # 如果已经和对方有连接，跳过，不能又发又接
-        if this_peer_state.cur_connection.ex_sending_chunkhash != "" or\
+        if this_peer_state.cur_connection.ex_sending_chunkhash != "" or \
                 this_peer_state.cur_connection.ex_downloading_chunkhash != "":
             return
 
@@ -136,7 +138,6 @@ def process_inbound_udp(sock: SimSocket):
         get_hash = bytes.hex(data)
         print(f"want to GET {get_hash}")
         chunk_data = config.haschunks[get_hash][:MAX_PAYLOAD]
-
 
         # send back DATA
 
@@ -188,21 +189,24 @@ def process_inbound_udp(sock: SimSocket):
                 print(f"finished sending {ex_sending_chunkhash} to {from_addr}")
 
                 # 画出cc的图
-                plt.plot(time_plot,cwnd_plot,color='green', marker='o', linestyle='dashed', linewidth=1, markersize=3)
-                plt.savefig(f"{from_addr}.png")
-                plt.show()
+                # plt.plot(time_plot, cwnd_plot, color='green', marker='o', linestyle='dashed', linewidth=1, markersize=3)
+                # plt.savefig(f"{from_addr[0]}-{from_addr[1]}.png")
+                # plt.show()
 
                 this_peer_state.removeConnection(from_addr)
             else:
-                left = ack_num * MAX_PAYLOAD
-                right = min((ack_num + 1) * MAX_PAYLOAD, CHUNK_DATA_SIZE)
-                next_data = config.haschunks[ex_sending_chunkhash][left: right]
+                for i in range(contiguous_send_cnt):
+                    left = ack_num * MAX_PAYLOAD
+                    if left > CHUNK_DATA_SIZE: break
+                    right = min((ack_num + 1) * MAX_PAYLOAD, CHUNK_DATA_SIZE)
+                    next_data = config.haschunks[ex_sending_chunkhash][left: right]
 
-                send_packet = PeerPacket(type_code=PeerPacketType.DATA.value, seq_num=ack_num + 1
-                                         , data=next_data)
-                if sending_wnd.put_packet(send_packet):
-                    # 没有超过窗口大小
-                    sock.sendto(send_packet.make_binary(), from_addr)
+                    send_packet = PeerPacket(type_code=PeerPacketType.DATA.value, seq_num=ack_num + 1
+                                             , data=next_data)
+                    if sending_wnd.put_packet(send_packet):
+                        # 没有超过窗口大小
+                        sock.sendto(send_packet.make_binary(), from_addr)
+                    ack_num += 1  # 这个只是临时的，不是真正的ack_num。
 
         else:
             # 是dupACK，应该更新congestion controller的状态
@@ -386,7 +390,6 @@ def peer_run(config):
             # crash check
             for con in this_peer_state.connections:
                 if con.last_receive_time != 0 and time.time() - con.last_receive_time >= 10:
-
                     crash_download_hash = con.ex_downloading_chunkhash
                     needed_chunk_list.append(crash_download_hash)
                     ex_received_chunk[crash_download_hash] = bytes()
@@ -476,4 +479,3 @@ if __name__ == '__main__':
 
     config = bt_utils.BtConfig(args)
     peer_run(config)
-    
