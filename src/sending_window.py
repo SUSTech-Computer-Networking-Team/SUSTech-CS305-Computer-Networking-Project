@@ -10,6 +10,7 @@ from util.simsocket import SimSocket
 class TimeoutEstimator:
     def __str__(self) -> str:
         return self.__dict__.__str__()
+
     def __init__(self, alpha: float = 1.0 / 8, beta: float = 1.0 / 8, sigma: float = 4, init_rtt: float = 1,
                  update_interval: int = 1):
         """超时估计器。参考TCP的计算公式。
@@ -83,7 +84,7 @@ class TcpSendingWindow:
             return False
         for i in range(self.seq2index(ack)):
             if len(self.sent_pkt_list) != 0:
-                pkt = self.sent_pkt_list.pop(i) #xxx
+                pkt = self.sent_pkt_list.pop(0)  # xxx
                 self.timeout.update(time.time() - pkt.send_time)  # 更新 rtt 的估计。
         self.front_seq = ack
         return True

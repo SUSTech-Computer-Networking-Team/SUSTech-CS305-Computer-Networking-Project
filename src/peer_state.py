@@ -9,7 +9,7 @@ class PeerState:
     def __init__(self) -> None:
         self.receiving_connections = []
         self.sending_connections = []
-        self.connections = []
+        self.connections:List[TcpLikeConnection] = []
         self.cur_connection = None
         self.ack = 0
 
