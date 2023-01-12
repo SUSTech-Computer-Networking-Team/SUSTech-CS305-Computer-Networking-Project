@@ -205,9 +205,6 @@ def process_inbound_udp(sock):
 
         # finished downloading this chunkdata!
         if len(ex_received_chunk[ex_downloading_chunkhash]) == CHUNK_DATA_SIZE:
-            # dump your received chunk to file in dict form using pickle
-            with open(ex_output_file, "wb") as wf:
-                pickle.dump(ex_received_chunk, wf)
 
             # add to this peer's haschunk:
             config.haschunks[ex_downloading_chunkhash] = ex_received_chunk[ex_downloading_chunkhash]
@@ -218,6 +215,9 @@ def process_inbound_udp(sock):
             
             # you need to print "GOT" when finished downloading all chunks in a DOWNLOAD file
             if checkFinish():
+                with open(ex_output_file, "wb") as wf:
+                    # dump your received chunk to file in dict form using pickle
+                    pickle.dump(ex_received_chunk, wf)
                 print(f"GOT {ex_output_file}")
 
             # The following things are just for illustration, you do not need to print out in your design.
