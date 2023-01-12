@@ -9,7 +9,7 @@ class PeerState:
     def __init__(self) -> None:
         self.receiving_connections = []
         self.sending_connections = []
-        self.connections = []
+        self.connections:List[TcpLikeConnection] = []
         self.cur_connection = None
         self.ack = 0
 
@@ -48,7 +48,6 @@ class TcpLikeConnection:
     def __init__(self, sending_peer=0, receiving_peer=1, sending_seqnum=0, receiving_seq_num=0,
                  connect_peer=()) -> None:
         """TCP 连接状态
-
         Args:
             sending_peer (int, optional): _description_. Defaults to 0.
             receiving_peer (int, optional): _description_. Defaults to 1.
@@ -72,6 +71,6 @@ class TcpLikeConnection:
 
         self.last_receive_time = 0
 
-
-
-
+        self.cwnd_plot = []
+        self.time_plot = []
+        self.time_plot_cnt = []

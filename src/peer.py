@@ -34,10 +34,35 @@ needed_chunk_list = []
 
 this_peer_state = PeerState()
 
+cwnd_plot = []
+time_plot = []
+counter = 0
 
-def process_inbound_udp(sock):
+
+def check_timeout(sock: SimSocket) -> None:
+    for conn in this_peer_state.connections:
+        if not conn.is_sender: return
+        sending_wnd: TcpSendingWindow = conn.sending_wnd
+        timeout_packets = sending_wnd.timeout_packets_seq()
+        if len(timeout_packets) == 0:
+            continue
+        congestion_controller = conn.congestion_controller
+        for seq in timeout_packets:
+            pkt = sending_wnd.fetch_data(seq)
+            # 更新包时间
+            pkt.send_time = time.time()
+            # 重传.
+            sock.sendto(pkt.peer_packet.make_binary(), conn.receiving_peer)
+            # 更新congestion window
+            congestion_controller.notify_timeout()
+
+
+def process_inbound_udp(sock: SimSocket):
     global config
     global needed_chunk_list, ex_output_file, ex_received_chunk
+    # 超时检查
+    check_timeout(sock)
+
     # global ex_sending_chunkhash
     # LOGGER.debug("进入process_inbound_udp函数")
     # Receive pkt
@@ -136,6 +161,9 @@ def process_inbound_udp(sock):
 
         congestion_controller = this_peer_state.cur_connection.congestion_controller
         sending_wnd = this_peer_state.cur_connection.sending_wnd
+        cwnd_plot = this_peer_state.cur_connection.cwnd_plot
+        time_plot = this_peer_state.cur_connection.time_plot
+        time_plot_cnt = this_peer_state.cur_connection.time_plot_cnt
 
         ack_num = peer_packet.ack_num
 
@@ -145,10 +173,19 @@ def process_inbound_udp(sock):
             congestion_controller.notify_new_ack()
             sending_wnd.window_size = congestion_controller.cwnd()
 
+            cwnd_plot.append(congestion_controller.cwnd())
+            time_plot_cnt += 1
+            time_plot.append(time_plot_cnt)
+
             if ack_num * MAX_PAYLOAD >= CHUNK_DATA_SIZE:
                 # 先判断是否完成整个chunk的传输
                 # finished
                 print(f"finished sending {ex_sending_chunkhash} to {from_addr}")
+
+                # 画出cc的图
+                plt.plot(time_plot,cwnd_plo,color='green', marker='o', linestyle='dashed', linewidth=1, markersize=3)
+                plt.show()
+
                 this_peer_state.removeConnection(from_addr)
             else:
                 left = ack_num * MAX_PAYLOAD
@@ -166,6 +203,11 @@ def process_inbound_udp(sock):
             # 根据当前的controller状态，判断dupACK counter是否满足重传条件
             congestion_controller.notify_duplicate()
             sending_wnd.window_size = congestion_controller.cwnd()
+
+            cwnd_plot.append(congestion_controller.cwnd())
+            time_plot_cnt += 1
+            time_plot.append(time_plot_cnt)
+
             if congestion_controller.duplicate_ack_count >= 3:
                 # 满足重传条件
                 fast_retransmit_packet: TimedPacket = sending_wnd.fetch_data(ack_num)
@@ -201,7 +243,8 @@ def process_inbound_udp(sock):
         # send back GET pkt, if we need it.
         if len(get_chunk_hash) != 0:
             get_header = struct.pack(
-                "!HBBHHII", 52305, MY_TEAM, PeerPacketType.GET.value, HEADER_LEN, HEADER_LEN + len(get_chunk_hash), 0, 0)
+                "!HBBHHII", 52305, MY_TEAM, PeerPacketType.GET.value, HEADER_LEN, HEADER_LEN + len(get_chunk_hash), 0,
+                0)
             get_pkt = get_header + get_chunk_hash
             sock.sendto(get_pkt, from_addr)
 
@@ -252,11 +295,13 @@ def process_inbound_udp(sock):
             else:
                 print("Example fails. Please check the example files carefully.")
 
+
 def checkFinish():
     for chunk_hash in ex_received_chunk.keys():
         if len(ex_received_chunk[chunk_hash]) != CHUNK_DATA_SIZE:
             return False
     return True
+
 
 def process_download(sock, chunkfile, outputfile):
     """
@@ -282,6 +327,7 @@ def process_download(sock, chunkfile, outputfile):
             # ex_downloading_chunkhash = datahash_str
 
     send_whohas(sock)
+
 
 def send_whohas(sock):
     global needed_chunk_list
@@ -371,7 +417,7 @@ def start_logger(verbose_level, id):
         else:
             sh_level = logging.INFO
         sh = logging.StreamHandler(stream=sys.stdout)
-        sh.setLevel(level = sh_level)
+        sh.setLevel(level=sh_level)
         sh.setFormatter(formatter)
         LOGGER.addHandler(sh)
     # 我们自己写的代码的 logger, 存放在src-log而不是log目录下，方便查看
@@ -415,3 +461,4 @@ if __name__ == '__main__':
 
     config = bt_utils.BtConfig(args)
     peer_run(config)
+    
