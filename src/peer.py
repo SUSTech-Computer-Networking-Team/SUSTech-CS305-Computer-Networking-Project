@@ -60,8 +60,6 @@ def check_timeout(sock: SimSocket) -> None:
 def process_inbound_udp(sock: SimSocket):
     global config
     global needed_chunk_list, ex_output_file, ex_received_chunk
-    # 超时检查
-    check_timeout(sock)
 
     # global ex_sending_chunkhash
     # LOGGER.debug("进入process_inbound_udp函数")
@@ -247,6 +245,7 @@ def process_inbound_udp(sock: SimSocket):
                 0)
             get_pkt = get_header + get_chunk_hash
             sock.sendto(get_pkt, from_addr)
+            this_peer_state.cur_connection.is_sender = False
 
             # update connection info
             this_peer_state.cur_connection.last_receive_time = time.time()
@@ -369,9 +368,14 @@ def peer_run(config):
 
     try:
         while True:
+
+            # 超时检查
+            check_timeout(sock)
+
             # crash check
             for con in this_peer_state.connections:
                 if con.last_receive_time != 0 and time.time() - con.last_receive_time >= 10:
+
                     crash_download_hash = con.ex_downloading_chunkhash
                     needed_chunk_list.append(crash_download_hash)
                     ex_received_chunk[crash_download_hash] = bytes()
