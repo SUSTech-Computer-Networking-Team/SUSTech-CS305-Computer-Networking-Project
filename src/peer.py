@@ -119,21 +119,47 @@ def process_inbound_udp(sock):
         # received an ACK pkt
         ex_sending_chunkhash = this_peer_state.cur_connection.ex_sending_chunkhash
 
+        congestion_controller = this_peer_state.cur_connection.congestion_controller
+        sending_wnd = this_peer_state.cur_connection.sending_wnd
+
         ack_num = peer_packet.ack_num
 
-        if ack_num * MAX_PAYLOAD >= CHUNK_DATA_SIZE:
-            # finished
-            print(f"finished sending {ex_sending_chunkhash} to {from_addr}")
-            this_peer_state.removeConnection(from_addr)
-        else:
-            left = ack_num * MAX_PAYLOAD
-            right = min((ack_num + 1) * MAX_PAYLOAD, CHUNK_DATA_SIZE)
-            next_data = config.haschunks[ex_sending_chunkhash][left: right]
+        # 判断是否是dupACK
+        if sending_wnd.try_acknowledge(ack_num + 1):
+            # 不是dupACK
+            congestion_controller.notify_new_ack()
+            sending_wnd.window_size = congestion_controller.cwnd()
 
-            # send next data
-            data_header = struct.pack(
-                "!HBBHHII", 52305, MY_TEAM, 3, HEADER_LEN, HEADER_LEN + len(next_data), ack_num + 1, 0)
-            sock.sendto(data_header + next_data, from_addr)
+            if ack_num * MAX_PAYLOAD >= CHUNK_DATA_SIZE:
+                # 先判断是否完成整个chunk的传输
+                # finished
+                print(f"finished sending {ex_sending_chunkhash} to {from_addr}")
+                this_peer_state.removeConnection(from_addr)
+            else:
+                left = ack_num * MAX_PAYLOAD
+                right = min((ack_num + 1) * MAX_PAYLOAD, CHUNK_DATA_SIZE)
+                next_data = config.haschunks[ex_sending_chunkhash][left: right]
+
+                send_packet = PeerPacket(type_code=PeerPacketType.DATA.value, seq_num=ack_num + 1
+                                         , data=next_data)
+                if sending_wnd.put_packet(send_packet):
+                    # 没有超过窗口大小
+                    sock.sendto(send_packet.make_binary(), from_addr)
+
+        else:
+            # 是dupACK，应该更新congestion controller的状态
+            # 根据当前的controller状态，判断dupACK counter是否满足重传条件
+            congestion_controller.notify_duplicate()
+            sending_wnd.window_size = congestion_controller.cwnd()
+            if congestion_controller.duplicate_ack_count >= 3:
+                # 满足重传条件
+                fast_retransmit_packet: TimedPacket = sending_wnd.fetch_data(ack_num)
+                fast_retransmit_packet.send_time = time.time()  # 重传之后重新计时。
+                sock.sendto(fast_retransmit_packet.peer_packet.make_binary(), from_addr)
+            else:
+                # 不满足重传条件
+                pass
+
 
     # ------------------------------- receiver part --------------------------------
     elif packet_type == PeerPacketType.IHAVE:
