@@ -21,7 +21,7 @@ class PeerState:
         return newConnection
 
     def removeConnection(self, addr):
-        for i in range(self.connections):
+        for i in range(len(self.connections)):
             if addr == self.connections[i].connect_peer:
                 self.connections.pop(i)
                 return True
@@ -54,15 +54,13 @@ class TcpLikeConnection:
 
         self.ex_sending_chunkhash = "" # sending mission
         self.ex_downloading_chunkhash = ""
+        self.has_chunk_list = []
         
         self.ACK_counter = 0
 
-    def ACK_counter():
+    def ACK_counter(self):
         
         if self.ACK_counter >= 4:
-            return retransmit_enable
+            return True
 
-        
-
-       
         
