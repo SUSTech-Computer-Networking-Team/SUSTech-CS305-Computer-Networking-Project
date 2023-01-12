@@ -169,7 +169,7 @@ def process_inbound_udp(sock: SimSocket):
         sending_wnd = this_peer_state.cur_connection.sending_wnd
         cwnd_plot = this_peer_state.cur_connection.cwnd_plot
         time_plot = this_peer_state.cur_connection.time_plot
-        time_plot_cnt = this_peer_state.cur_connection.time_plot_cnt
+        # time_plot_cnt = this_peer_state.cur_connection.time_plot_cnt
 
         ack_num = peer_packet.ack_num
 
