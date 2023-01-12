@@ -136,8 +136,7 @@ def process_inbound_udp(sock: SimSocket):
         get_hash = bytes.hex(data)
         print(f"want to GET {get_hash}")
         chunk_data = config.haschunks[get_hash][:MAX_PAYLOAD]
-        this_peer_state.cur_connection.ex_sending_chunkhash = get_hash
-        this_peer_state.sending_connections.append(this_peer_state.cur_connection)
+
 
         # send back DATA
 
@@ -148,9 +147,18 @@ def process_inbound_udp(sock: SimSocket):
         sending_wnd = this_peer_state.cur_connection.sending_wnd
         send_packet = PeerPacket(type_code=PeerPacketType.DATA.value, seq_num=1
                                  , data=chunk_data)
+
         if sending_wnd.put_packet(send_packet):
             # 没有超过窗口大小
             sock.sendto(send_packet.make_binary(), from_addr)
+            this_peer_state.cur_connection.ex_sending_chunkhash = get_hash
+            this_peer_state.sending_connections.append(this_peer_state.cur_connection)
+            this_peer_state.cur_connection.receiving_peer = from_addr
+            this_peer_state.cur_connection.sending_peer = (config.ip, config.port)
+
+        else:
+            # this_peer_state.removeConnection(from_addr)
+            LOGGER.error("WARN!!!!!!!!!!!!")
 
 
     elif packet_type == PeerPacketType.ACK:
@@ -172,8 +180,7 @@ def process_inbound_udp(sock: SimSocket):
             sending_wnd.window_size = congestion_controller.cwnd()
 
             cwnd_plot.append(congestion_controller.cwnd())
-            time_plot_cnt += 1
-            time_plot.append(time_plot_cnt)
+            time_plot.append(time.time())
 
             if ack_num * MAX_PAYLOAD >= CHUNK_DATA_SIZE:
                 # 先判断是否完成整个chunk的传输
@@ -181,7 +188,8 @@ def process_inbound_udp(sock: SimSocket):
                 print(f"finished sending {ex_sending_chunkhash} to {from_addr}")
 
                 # 画出cc的图
-                plt.plot(time_plot,cwnd_plo,color='green', marker='o', linestyle='dashed', linewidth=1, markersize=3)
+                plt.plot(time_plot,cwnd_plot,color='green', marker='o', linestyle='dashed', linewidth=1, markersize=3)
+                plt.savefig(f"{from_addr}.png")
                 plt.show()
 
                 this_peer_state.removeConnection(from_addr)
@@ -203,8 +211,7 @@ def process_inbound_udp(sock: SimSocket):
             sending_wnd.window_size = congestion_controller.cwnd()
 
             cwnd_plot.append(congestion_controller.cwnd())
-            time_plot_cnt += 1
-            time_plot.append(time_plot_cnt)
+            time_plot.append(time.time())
 
             if congestion_controller.duplicate_ack_count >= 3:
                 # 满足重传条件
@@ -245,10 +252,14 @@ def process_inbound_udp(sock: SimSocket):
                 0)
             get_pkt = get_header + get_chunk_hash
             sock.sendto(get_pkt, from_addr)
+
             this_peer_state.cur_connection.is_sender = False
+            this_peer_state.cur_connection.sending_peer = from_addr
+            this_peer_state.cur_connection.receiving_peer = (config.ip, config.port)
 
             # update connection info
             this_peer_state.cur_connection.last_receive_time = time.time()
+
 
     elif packet_type == PeerPacketType.DATA:
         # received a DATA pkt

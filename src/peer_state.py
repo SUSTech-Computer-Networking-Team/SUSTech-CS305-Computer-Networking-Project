@@ -73,4 +73,3 @@ class TcpLikeConnection:
 
         self.cwnd_plot = []
         self.time_plot = []
-        self.time_plot_cnt = []
