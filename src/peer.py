@@ -56,7 +56,6 @@ def process_inbound_udp(sock):
         f"prepared to response to {this_peer_state.cur_connection.connect_peer} with [team:{peer_packet.team_num}, "
         f"type:{peer_packet.type_code}, Seq:{peer_packet.seq_num}, Ack:{peer_packet.ack_num}]")
 
-
     packet_type = PeerPacketType(peer_packet.type_code)
 
     # ----------------------------- sender part -------------------------------------
@@ -65,8 +64,14 @@ def process_inbound_udp(sock):
         # see what chunk the sender has
         # whohas_chunk_hash = data[:20]
         # bytes to hex_str
+
+        # 如果已经和对方有连接，跳过，不能又发又接
+        if this_peer_state.cur_connection.ex_sending_chunkhash != "" or\
+                this_peer_state.cur_connection.ex_downloading_chunkhash != "":
+            return
+
         chunkhash_list = bytes.hex(data)
-        print(f"whohas: {chunkhash_list}, has: {config.haschunks.keys()}")
+        LOGGER.debug(f"whohas: {chunkhash_list}, has: {config.haschunks.keys()}")
 
         have_list = bytes()
         isHave = False
@@ -200,7 +205,8 @@ def process_inbound_udp(sock):
             get_pkt = get_header + get_chunk_hash
             sock.sendto(get_pkt, from_addr)
 
-        # update connection info
+            # update connection info
+            this_peer_state.cur_connection.last_receive_time = time.time()
 
     elif packet_type == PeerPacketType.DATA:
         # received a DATA pkt
@@ -211,6 +217,7 @@ def process_inbound_udp(sock):
         ack_pkt = struct.pack("!HBBHHII", 52305, MY_TEAM, 4,
                               HEADER_LEN, HEADER_LEN, 0, peer_packet.seq_num)
         sock.sendto(ack_pkt, from_addr)
+        this_peer_state.cur_connection.last_receive_time = time.time()
 
         # see if finished
         # todo 继续 send who has
@@ -316,6 +323,15 @@ def peer_run(config):
 
     try:
         while True:
+            # crash check
+            for con in this_peer_state.connections:
+                if con.last_receive_time != 0 and time.time() - con.last_receive_time >= 10:
+                    crash_download_hash = con.ex_downloading_chunkhash
+                    needed_chunk_list.append(crash_download_hash)
+                    ex_received_chunk[crash_download_hash] = bytes()
+                    this_peer_state.removeConnection(con.connect_peer)
+                    send_whohas(sock)
+
             ready = select.select([sock, sys.stdin], [], [], 0.1)
             read_ready = ready[0]
             if len(read_ready) > 0:

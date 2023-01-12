@@ -83,7 +83,7 @@ class TcpSendingWindow:
             return False
         for i in range(self.seq2index(ack)):
             if len(self.sent_pkt_list) != 0:
-                pkt = self.sent_pkt_list.pop(i) #xxx
+                pkt = self.sent_pkt_list.pop(0) #xxx
                 self.timeout.update(time.time() - pkt.send_time)  # 更新 rtt 的估计。
         self.front_seq = ack
         return True

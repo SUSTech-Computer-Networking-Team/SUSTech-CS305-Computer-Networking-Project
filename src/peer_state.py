@@ -58,6 +58,7 @@ class TcpLikeConnection:
         self.sending_peer = sending_peer
         self.receiving_peer = receiving_peer
         self.connect_peer = connect_peer
+        self.is_sender = True
 
         self.sending_seq_num = sending_seqnum
         self.receiving_seq_num = receiving_seq_num
@@ -69,6 +70,7 @@ class TcpLikeConnection:
         self.congestion_controller = CongestionController()
         self.sending_wnd = TcpSendingWindow()
 
+        self.last_receive_time = 0
 
 
 
