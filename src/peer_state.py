@@ -1,4 +1,6 @@
 from peer_constant import BUF_SIZE, CHUNK_DATA_SIZE, HEADER_LEN, MAX_PAYLOAD, MY_TEAM
+from congestion_controller import *
+from sending_window import *
 
 
 class PeerState:
@@ -63,7 +65,10 @@ class TcpLikeConnection:
         self.ex_sending_chunkhash = ""  # sending mission
         self.ex_downloading_chunkhash = ""
 
-        self.ACK_counter = 0
+        self.congestion_controller = CongestionController()
+        self.sending_wnd = TcpSendingWindow()
+
+
 
 
 
