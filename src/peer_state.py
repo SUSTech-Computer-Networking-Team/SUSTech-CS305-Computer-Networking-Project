@@ -48,7 +48,6 @@ class TcpLikeConnection:
     def __init__(self, sending_peer=0, receiving_peer=1, sending_seqnum=0, receiving_seq_num=0,
                  connect_peer=()) -> None:
         """TCP 连接状态
-
         Args:
             sending_peer (int, optional): _description_. Defaults to 0.
             receiving_peer (int, optional): _description_. Defaults to 1.
@@ -69,7 +68,6 @@ class TcpLikeConnection:
         self.congestion_controller = CongestionController()
         self.sending_wnd = TcpSendingWindow()
 
-
-
-
-
+        self.cwnd_plot = []
+        self.time_plot = []
+        self.time_plot_cnt = []
