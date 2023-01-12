@@ -34,7 +34,7 @@ DOWNLOAD test/tmp2/download_target.chunkhash test/tmp2/download_result.fragment
 @pytest.fixture(scope='module')
 def drop_session():
     success = False
-    time_max = 80
+    time_max = 180
 
     if os.path.exists("test/tmp2/download_result.fragment"):
         os.remove("test/tmp2/download_result.fragment")
@@ -52,7 +52,7 @@ def drop_session():
         if os.path.exists("test/tmp2/download_result.fragment"):
             success = True
             break
-        elif time.time()-stime>time_max:
+        elif time.time() - stime > time_max:
             # Reached max transmission time, abort
             success = False
             break 

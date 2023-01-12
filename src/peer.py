@@ -17,6 +17,7 @@ import socket
 import struct
 import util.simsocket as simsocket
 import select
+import matplotlib.pyplot as plt
 
 """
 This is CS305 project skeleton code.
@@ -111,9 +112,18 @@ def process_inbound_udp(sock):
         this_peer_state.sending_connections.append(this_peer_state.cur_connection)
 
         # send back DATA
-        data_header = struct.pack(
-            "!HBBHHII", 52305, MY_TEAM, 3, HEADER_LEN, HEADER_LEN, 1, 0)
-        sock.sendto(data_header + chunk_data, from_addr)
+
+        # data_header = struct.pack(
+        #     "!HBBHHII", 52305, MY_TEAM, 3, HEADER_LEN, HEADER_LEN, 1, 0)
+        # sock.sendto(data_header + chunk_data, from_addr)
+
+        sending_wnd = this_peer_state.cur_connection.sending_wnd
+        send_packet = PeerPacket(type_code=PeerPacketType.DATA.value, seq_num=1
+                                 , data=chunk_data)
+        if sending_wnd.put_packet(send_packet):
+            # 没有超过窗口大小
+            sock.sendto(send_packet.make_binary(), from_addr)
+
 
     elif packet_type == PeerPacketType.ACK:
         # received an ACK pkt
