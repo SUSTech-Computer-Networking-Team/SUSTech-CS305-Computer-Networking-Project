@@ -34,6 +34,10 @@ needed_chunk_list = []
 
 this_peer_state = PeerState()
 
+cwnd_plot = []
+time_plot = []
+counter = 0
+
 
 def process_inbound_udp(sock):
     global config
@@ -139,6 +143,9 @@ def process_inbound_udp(sock):
             # 不是dupACK
             congestion_controller.notify_new_ack()
             sending_wnd.window_size = congestion_controller.cwnd()
+            cwnd_plot.append(congestion_controller.cwnd())
+            counter += 1
+            time_plot.append(counter)
 
             if ack_num * MAX_PAYLOAD >= CHUNK_DATA_SIZE:
                 # 先判断是否完成整个chunk的传输
@@ -161,6 +168,9 @@ def process_inbound_udp(sock):
             # 根据当前的controller状态，判断dupACK counter是否满足重传条件
             congestion_controller.notify_duplicate()
             sending_wnd.window_size = congestion_controller.cwnd()
+            cwnd_plot.append(congestion_controller.cwnd())
+            counter += 1
+            time_plot.append(counter)
             if congestion_controller.duplicate_ack_count >= 3:
                 # 满足重传条件
                 fast_retransmit_packet: TimedPacket = sending_wnd.fetch_data(ack_num)
@@ -399,3 +409,4 @@ if __name__ == '__main__':
 
     config = bt_utils.BtConfig(args)
     peer_run(config)
+    
