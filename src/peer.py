@@ -1,11 +1,13 @@
 import os
 import sys
+import time
+
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 
 from enum import Enum
 from peer_state import *
 from peer_packet import *
-from peer_constant import *
+from peer_constant import BUF_SIZE, CHUNK_DATA_SIZE, HEADER_LEN, MAX_PAYLOAD, MY_TEAM
 
 import pickle
 import argparse
@@ -31,70 +33,34 @@ needed_chunk_list = []
 
 this_peer_state = PeerState()
 
-EstimateRTT = 0
-DevRTT = 0
-TimeoutIntervel = 0
-
-dupACKCnt = 0
-cwnd = 1
-sshresh = 64
-
-def re_slow_start(ex_cwnd):
-    global dupACKCnt, cwnd, sshresh
-
-    cwnd = 1
-    sshresh = max(ex_cwnd / 2, 2)
-    dupACKCnt = 0
-
-def self_adapted_RTT(EstimateRTT_old, SampleRTT, DevRTT_old):
-    alpha = 0.125
-    beta = 0.25
-    EstimateRTT_new = (1 - alpha) * EstimateRTT_old + alpha * SampleRTT
-    DevRTT_new = (1 - beta) * DevRTT_old + beta * abs(SampleRTT - EstimateRTT_new)
-    TimeoutIntervel = EstimateRTT_new + 4 * DevRTT_new
-    return EstimateRTT_new, DevRTT_new, TimeoutIntervel
 
 def process_inbound_udp(sock):
     global config
     global needed_chunk_list, ex_output_file, ex_received_chunk
     # global ex_sending_chunkhash
-
-
+    # LOGGER.debug("进入process_inbound_udp函数")
     # Receive pkt
     pkt, from_addr = sock.recvfrom(BUF_SIZE)
-    Magic, Team, Type, hlen, plen, Seq, Ack = struct.unpack(
-        "!HBBHHII", pkt[:HEADER_LEN])  # add !
-    data = pkt[HEADER_LEN:]
+    peer_packet = PeerPacket.build(pkt)
+    # LOGGER.debug(f"从{from_addr}收到{peer_packet}")
+    data = peer_packet.data
 
     # judge the peer connection
     this_peer_state.cur_connection = this_peer_state.findConnection(from_addr)
     if this_peer_state.cur_connection is None:
-       this_peer_state.cur_connection = this_peer_state.addConnection(from_addr)
+        this_peer_state.cur_connection = this_peer_state.addConnection(from_addr)
+    LOGGER.debug(f"恢复与{from_addr}的连接{this_peer_state.cur_connection}")
 
-    print(f"prepared to send to {this_peer_state.cur_connection.connect_peer} with [team:{Team}, type:{Type}, Seq:{Seq}, Ack:{Ack}")
+    print(
+        f"prepared to response to {this_peer_state.cur_connection.connect_peer} with [team:{peer_packet.team_num}, "
+        f"type:{peer_packet.type_code}, Seq:{peer_packet.seq_num}, Ack:{peer_packet.ack_num}]")
 
 
-    Type = PeerPacketType(Type)
+    packet_type = PeerPacketType(peer_packet.type_code)
 
     # ----------------------------- sender part -------------------------------------
-
-    # todo
-    # ihave 发送所有的 chunk
-    # 收到 ihave 以后分配 list 里的 chunk 给每一个连接
-
-    if Type == PeerPacketType.WHOHAS:
-        LOGGER.debug("接收到WHOHAS询问。")
-        # 判断是否超过最大发送次数
-        if len(this_peer_state.sending_connections) >= config.max_conn:
-            LOGGER.warn("连接数量超过最大限制，发送拒绝报文。")
-            # sock.send
-            # denied seq和ack都是0就行。
-            denyPacket = PeerPacket(type_code=PeerPacketType.DENIED.value)
-            sock.sendto(denyPacket.make_binary(), from_addr)
-            this_peer_state.removeConnection(from_addr)
-            return # added
-
-        # received an WHOHAS pkt
+    if packet_type == PeerPacketType.WHOHAS:
+        LOGGER.debug("接收到 WHOHAS 询问。")
         # see what chunk the sender has
         # whohas_chunk_hash = data[:20]
         # bytes to hex_str
@@ -125,8 +91,17 @@ def process_inbound_udp(sock):
 
         # this_peer_state.cur_connection.ex_sending_chunkhash = chunkhash_str
 
-    elif Type == PeerPacketType.GET:
+    elif packet_type == PeerPacketType.GET:
         # received a GET pkt
+        # 判断是否超过最大发送次数
+        if len(this_peer_state.sending_connections) >= config.max_conn:
+            LOGGER.warning("连接数量超过最大限制，发送拒绝报文。")
+            # sock.send
+            # denied seq和ack都是0就行。
+            deny_packet = PeerPacket(type_code=PeerPacketType.DENIED.value)
+            sock.sendto(deny_packet.make_binary(), from_addr)
+            this_peer_state.removeConnection(from_addr)
+            return  # added
 
         # 识别 GET 里真正申请的部分
         get_hash = bytes.hex(data)
@@ -140,17 +115,18 @@ def process_inbound_udp(sock):
             "!HBBHHII", 52305, MY_TEAM, 3, HEADER_LEN, HEADER_LEN, 1, 0)
         sock.sendto(data_header + chunk_data, from_addr)
 
-    elif Type == PeerPacketType.ACK:
+    elif packet_type == PeerPacketType.ACK:
         # received an ACK pkt
         ex_sending_chunkhash = this_peer_state.cur_connection.ex_sending_chunkhash
 
-        ack_num = Ack
-        if (ack_num) * MAX_PAYLOAD >= CHUNK_DATA_SIZE:
+        ack_num = peer_packet.ack_num
+
+        if ack_num * MAX_PAYLOAD >= CHUNK_DATA_SIZE:
             # finished
             print(f"finished sending {ex_sending_chunkhash} to {from_addr}")
             this_peer_state.removeConnection(from_addr)
         else:
-            left = (ack_num) * MAX_PAYLOAD
+            left = ack_num * MAX_PAYLOAD
             right = min((ack_num + 1) * MAX_PAYLOAD, CHUNK_DATA_SIZE)
             next_data = config.haschunks[ex_sending_chunkhash][left: right]
 
@@ -160,8 +136,7 @@ def process_inbound_udp(sock):
             sock.sendto(data_header + next_data, from_addr)
 
     # ------------------------------- receiver part --------------------------------
-    elif Type == PeerPacketType.IHAVE:
-        
+    elif packet_type == PeerPacketType.IHAVE:
         # received an IHAVE pkt
         # see what chunk the sender has
         get_chunk_list = bytes.hex(data)
@@ -189,15 +164,16 @@ def process_inbound_udp(sock):
             get_pkt = get_header + get_chunk_hash
             sock.sendto(get_pkt, from_addr)
 
+        # update connection info
 
-    elif Type == PeerPacketType.DATA:
+    elif packet_type == PeerPacketType.DATA:
         # received a DATA pkt
         ex_downloading_chunkhash = this_peer_state.cur_connection.ex_downloading_chunkhash
         ex_received_chunk[ex_downloading_chunkhash] += data
 
         # send back ACK
-        ack_pkt = struct.pack("!HBBHHII", 52305, MY_TEAM,  PeerPacketType.ACK.value,
-                              HEADER_LEN, HEADER_LEN, 0, Seq)
+        ack_pkt = struct.pack("!HBBHHII", 52305, MY_TEAM, 4,
+                              HEADER_LEN, HEADER_LEN, 0, peer_packet.seq_num)
         sock.sendto(ack_pkt, from_addr)
 
         # see if finished
@@ -209,10 +185,10 @@ def process_inbound_udp(sock):
             # add to this peer's haschunk:
             config.haschunks[ex_downloading_chunkhash] = ex_received_chunk[ex_downloading_chunkhash]
             this_peer_state.removeConnection(from_addr)
-            
+
             if len(needed_chunk_list) != 0:
                 send_whohas(sock)
-            
+
             # you need to print "GOT" when finished downloading all chunks in a DOWNLOAD file
             if checkFinish():
                 with open(ex_output_file, "wb") as wf:
@@ -240,10 +216,10 @@ def checkFinish():
     return True
 
 def process_download(sock, chunkfile, outputfile):
-    '''
+    """
     receiver part
     if DOWNLOAD is used, the peer will keep getting files until it is done
-    '''
+    """
     # print('PROCESS GET SKELETON CODE CALLED.  Fill me in! I\'ve been doing! (', chunkfile, ',     ', outputfile, ')')
     global ex_output_file
     global ex_received_chunk
@@ -276,7 +252,7 @@ def send_whohas(sock):
     # |2byte  header len  |2byte pkt len |
     # |      4byte  seq                  |
     # |      4byte  ack                  |
-    
+
     whohas_header = struct.pack(
         "!HBBHHII", 52305, MY_TEAM, PeerPacketType.WHOHAS.value, HEADER_LEN, HEADER_LEN + len(download_hash), 0, 0)
     whohas_pkt = whohas_header + download_hash
@@ -288,7 +264,7 @@ def send_whohas(sock):
         if int(p[0]) != config.identity:
             sock.sendto(whohas_pkt, (p[1], int(p[2])))
             print(f"send whohas to ({p[1]}:{p[2]}) with {info}")
-            
+
 
 def process_user_input(sock):
     command, chunkf, outf = input().split(' ')
@@ -321,9 +297,13 @@ def peer_run(config):
 
 
 from datetime import datetime
+
 _current_time = f"_{datetime.now().strftime('%Y-%m-%d-%H-%M')}"
 import logging
-LOGGER:logging.Logger = None
+
+LOGGER: logging.Logger = None
+
+
 def start_logger(verbose_level, id):
     global LOGGER
     LOGGER = logging.getLogger(f"SRC PEER{id}_LOGGER")
@@ -336,7 +316,7 @@ def start_logger(verbose_level, id):
             sh_level = logging.INFO
         elif verbose_level == 3:
             sh_level = logging.DEBUG
-        else: 
+        else:
             sh_level = logging.INFO
         sh = logging.StreamHandler(stream=sys.stdout)
         sh.setLevel(level = sh_level)
@@ -346,12 +326,13 @@ def start_logger(verbose_level, id):
     log_dir = "src-log"
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
-    fh = logging.FileHandler(filename=os.path.join(log_dir, f"src-peer{id}{_current_time}.log"), mode="w")
+    fh = logging.FileHandler(filename=os.path.join(log_dir, f"src{_current_time}-peer{id}.log"), mode="w")
 
     fh.setLevel(level=logging.DEBUG)
     fh.setFormatter(formatter)
     LOGGER.addHandler(fh)
     LOGGER.info("Start logging")
+
 
 if __name__ == '__main__':
     """
@@ -379,6 +360,6 @@ if __name__ == '__main__':
     parser.add_argument('-t', type=int, help="pre-defined timeout", default=0)
     args = parser.parse_args()
     start_logger(args.v, args.i)
-    
+
     config = bt_utils.BtConfig(args)
     peer_run(config)

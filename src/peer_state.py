@@ -1,5 +1,10 @@
+from peer_constant import BUF_SIZE, CHUNK_DATA_SIZE, HEADER_LEN, MAX_PAYLOAD, MY_TEAM
+
+
 class PeerState:
-    def __init__(self) -> None:    
+    def __str__(self) -> str:
+        return self.__dict__.__str__()
+    def __init__(self) -> None:
         self.receiving_connections = []
         self.sending_connections = []
         self.connections = []
@@ -26,7 +31,7 @@ class PeerState:
                 self.connections.pop(i)
                 return True
         return False
-        
+
 
 # class DownloadMission:
 #     def __init__(self, eof, erc, edc):
@@ -36,7 +41,10 @@ class PeerState:
 
 
 class TcpLikeConnection:
-    def __init__(self, sending_peer=0, receiving_peer=1, sending_seqnum=0, receiving_seq_num=0, connect_peer = ()) -> None:
+    def __str__(self) -> str:
+        return self.__dict__.__str__()
+    def __init__(self, sending_peer=0, receiving_peer=1, sending_seqnum=0, receiving_seq_num=0,
+                 connect_peer=()) -> None:
         """TCP 连接状态
 
         Args:
@@ -49,18 +57,14 @@ class TcpLikeConnection:
         self.receiving_peer = receiving_peer
         self.connect_peer = connect_peer
 
-        self.sending_seq_num = sending_seqnum  
+        self.sending_seq_num = sending_seqnum
         self.receiving_seq_num = receiving_seq_num
 
-        self.ex_sending_chunkhash = "" # sending mission
+        self.ex_sending_chunkhash = ""  # sending mission
         self.ex_downloading_chunkhash = ""
         self.has_chunk_list = []
-        
+
         self.ACK_counter = 0
 
-    def ACK_counter(self):
-        
-        if self.ACK_counter >= 4:
-            return True
 
-        
+
