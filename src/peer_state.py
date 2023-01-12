@@ -1,4 +1,6 @@
 from peer_constant import BUF_SIZE, CHUNK_DATA_SIZE, HEADER_LEN, MAX_PAYLOAD, MY_TEAM
+from congestion_controller import *
+from sending_window import *
 
 
 class PeerState:
@@ -26,7 +28,7 @@ class PeerState:
         return newConnection
 
     def removeConnection(self, addr):
-        for i in range(self.connections):
+        for i in range(len(self.connections)):
             if addr == self.connections[i].connect_peer:
                 self.connections.pop(i)
                 return True
@@ -62,8 +64,12 @@ class TcpLikeConnection:
 
         self.ex_sending_chunkhash = ""  # sending mission
         self.ex_downloading_chunkhash = ""
+        self.has_chunk_list = []
 
-        self.ACK_counter = 0
+        self.congestion_controller = CongestionController()
+        self.sending_wnd = TcpSendingWindow()
+
+
 
 
 

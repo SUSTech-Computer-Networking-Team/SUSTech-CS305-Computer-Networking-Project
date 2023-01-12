@@ -82,8 +82,9 @@ class TcpSendingWindow:
             # Duplicated ACK 出现了
             return False
         for i in range(self.seq2index(ack)):
-            pkt = self.sent_pkt_list.pop()
-            self.timeout.update(time.time() - pkt.send_time)  # 更新 rtt 的估计。
+            if len(self.sent_pkt_list) != 0:
+                pkt = self.sent_pkt_list.pop(i) #xxx
+                self.timeout.update(time.time() - pkt.send_time)  # 更新 rtt 的估计。
         self.front_seq = ack
         return True
 

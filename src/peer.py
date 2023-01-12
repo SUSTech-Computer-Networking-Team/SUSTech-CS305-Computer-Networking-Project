@@ -17,6 +17,7 @@ import socket
 import struct
 import util.simsocket as simsocket
 import select
+import matplotlib.pyplot as plt
 
 """
 This is CS305 project skeleton code.
@@ -29,19 +30,21 @@ config = None
 # ex_downloading_chunkhash = ""
 ex_output_file = None
 ex_received_chunk = dict()
-needed_chunk_ist = []
+needed_chunk_list = []
 
 this_peer_state = PeerState()
 
 
 def process_inbound_udp(sock):
     global config
+    global needed_chunk_list, ex_output_file, ex_received_chunk
     # global ex_sending_chunkhash
     # LOGGER.debug("进入process_inbound_udp函数")
     # Receive pkt
     pkt, from_addr = sock.recvfrom(BUF_SIZE)
     peer_packet = PeerPacket.build(pkt)
     # LOGGER.debug(f"从{from_addr}收到{peer_packet}")
+    data = peer_packet.data
 
     # judge the peer connection
     this_peer_state.cur_connection = this_peer_state.findConnection(from_addr)
@@ -53,7 +56,6 @@ def process_inbound_udp(sock):
         f"prepared to response to {this_peer_state.cur_connection.connect_peer} with [team:{peer_packet.team_num}, "
         f"type:{peer_packet.type_code}, Seq:{peer_packet.seq_num}, Ack:{peer_packet.ack_num}]")
 
-    ex_sending_chunkhash = this_peer_state.cur_connection.ex_sending_chunkhash
 
     packet_type = PeerPacketType(peer_packet.type_code)
 
@@ -61,19 +63,34 @@ def process_inbound_udp(sock):
     if packet_type == PeerPacketType.WHOHAS:
         LOGGER.debug("接收到 WHOHAS 询问。")
         # see what chunk the sender has
-        whohas_chunk_hash = peer_packet.data[:20]
+        # whohas_chunk_hash = data[:20]
         # bytes to hex_str
-        chunkhash_str = bytes.hex(whohas_chunk_hash)
-        this_peer_state.cur_connection.ex_sending_chunkhash = chunkhash_str
+        chunkhash_list = bytes.hex(data)
+        print(f"whohas: {chunkhash_list}, has: {config.haschunks.keys()}")
 
-        print(f"whohas: {chunkhash_str}, has: {list(config.haschunks.keys())}")
-        if chunkhash_str in config.haschunks:
+        have_list = bytes()
+        isHave = False
+
+        l = 0
+        r = 40
+        while r <= len(chunkhash_list):
+            if chunkhash_list[l:r] in config.haschunks.keys():
+                have_list += bytes.fromhex(chunkhash_list[l:r])
+                isHave = True
+            l += 40
+            r += 40
+
+        if isHave:
+            print(f"whohas: {chunkhash_list}, has: {bytes.hex(have_list)}")
             # send back IHAVE pkt
             ihave_header = struct.pack(
-                "!HBBHHII", 52305, MY_TEAM, PeerPacketType.IHAVE.value, HEADER_LEN, HEADER_LEN + len(whohas_chunk_hash),
-                0, 0)
-            ihave_pkt = ihave_header + whohas_chunk_hash
+                "!HBBHHII", 52305, MY_TEAM, PeerPacketType.IHAVE.value, HEADER_LEN, HEADER_LEN + len(have_list), 0, 0)
+            ihave_pkt = ihave_header + have_list
             sock.sendto(ihave_pkt, from_addr)
+        else:
+            this_peer_state.removeConnection(from_addr)
+
+        # this_peer_state.cur_connection.ex_sending_chunkhash = chunkhash_str
 
     elif packet_type == PeerPacketType.GET:
         # received a GET pkt
@@ -87,50 +104,108 @@ def process_inbound_udp(sock):
             this_peer_state.removeConnection(from_addr)
             return  # added
 
-        # 感觉要改，识别 GET 里真正申请的部分
-        chunk_data = config.haschunks[ex_sending_chunkhash][:MAX_PAYLOAD]
+        # 识别 GET 里真正申请的部分
+        get_hash = bytes.hex(data)
+        print(f"want to GET {get_hash}")
+        chunk_data = config.haschunks[get_hash][:MAX_PAYLOAD]
+        this_peer_state.cur_connection.ex_sending_chunkhash = get_hash
+        this_peer_state.sending_connections.append(this_peer_state.cur_connection)
 
         # send back DATA
-        data_header = struct.pack(
-            "!HBBHHII", 52305, MY_TEAM, 3, HEADER_LEN, HEADER_LEN, 1, 0)
-        sock.sendto(data_header + chunk_data, from_addr)
+
+        # data_header = struct.pack(
+        #     "!HBBHHII", 52305, MY_TEAM, 3, HEADER_LEN, HEADER_LEN, 1, 0)
+        # sock.sendto(data_header + chunk_data, from_addr)
+
+        sending_wnd = this_peer_state.cur_connection.sending_wnd
+        send_packet = PeerPacket(type_code=PeerPacketType.DATA.value, seq_num=1
+                                 , data=chunk_data)
+        if sending_wnd.put_packet(send_packet):
+            # 没有超过窗口大小
+            sock.sendto(send_packet.make_binary(), from_addr)
+
 
     elif packet_type == PeerPacketType.ACK:
         # received an ACK pkt
+        ex_sending_chunkhash = this_peer_state.cur_connection.ex_sending_chunkhash
+
+        congestion_controller = this_peer_state.cur_connection.congestion_controller
+        sending_wnd = this_peer_state.cur_connection.sending_wnd
 
         ack_num = peer_packet.ack_num
 
-        if ack_num * MAX_PAYLOAD >= CHUNK_DATA_SIZE:
-            # finished
-            print(f"finished sending {ex_sending_chunkhash} to {from_addr}")
-            pass
-        else:
-            left = ack_num * MAX_PAYLOAD
-            right = min((ack_num + 1) * MAX_PAYLOAD, CHUNK_DATA_SIZE)
-            next_data = config.haschunks[ex_sending_chunkhash][left: right]
+        # 判断是否是dupACK
+        if sending_wnd.try_acknowledge(ack_num + 1):
+            # 不是dupACK
+            congestion_controller.notify_new_ack()
+            sending_wnd.window_size = congestion_controller.cwnd()
 
-            # send next data
-            data_header = struct.pack(
-                "!HBBHHII", 52305, MY_TEAM, 3, HEADER_LEN, HEADER_LEN + len(next_data), ack_num + 1, 0)
-            sock.sendto(data_header + next_data, from_addr)
+            if ack_num * MAX_PAYLOAD >= CHUNK_DATA_SIZE:
+                # 先判断是否完成整个chunk的传输
+                # finished
+                print(f"finished sending {ex_sending_chunkhash} to {from_addr}")
+                this_peer_state.removeConnection(from_addr)
+            else:
+                left = ack_num * MAX_PAYLOAD
+                right = min((ack_num + 1) * MAX_PAYLOAD, CHUNK_DATA_SIZE)
+                next_data = config.haschunks[ex_sending_chunkhash][left: right]
+
+                send_packet = PeerPacket(type_code=PeerPacketType.DATA.value, seq_num=ack_num + 1
+                                         , data=next_data)
+                if sending_wnd.put_packet(send_packet):
+                    # 没有超过窗口大小
+                    sock.sendto(send_packet.make_binary(), from_addr)
+
+        else:
+            # 是dupACK，应该更新congestion controller的状态
+            # 根据当前的controller状态，判断dupACK counter是否满足重传条件
+            congestion_controller.notify_duplicate()
+            sending_wnd.window_size = congestion_controller.cwnd()
+            if congestion_controller.duplicate_ack_count >= 3:
+                # 满足重传条件
+                fast_retransmit_packet: TimedPacket = sending_wnd.fetch_data(ack_num)
+                fast_retransmit_packet.send_time = time.time()  # 重传之后重新计时。
+                sock.sendto(fast_retransmit_packet.peer_packet.make_binary(), from_addr)
+            else:
+                # 不满足重传条件
+                pass
+
 
     # ------------------------------- receiver part --------------------------------
     elif packet_type == PeerPacketType.IHAVE:
         # received an IHAVE pkt
         # see what chunk the sender has
-        get_chunk_hash = peer_packet.data[:20]
+        get_chunk_list = bytes.hex(data)
+        get_chunk_hash = bytes()
 
-        # send back GET pkt
-        get_header = struct.pack(
-            "!HBBHHII", 52305, MY_TEAM, PeerPacketType.GET.value, HEADER_LEN, HEADER_LEN + len(get_chunk_hash), 0, 0)
-        get_pkt = get_header + get_chunk_hash
-        sock.sendto(get_pkt, from_addr)
+        l = 0
+        r = 40
+        while r <= len(get_chunk_list):
+            chunk_hash = get_chunk_list[l:r]
+            this_peer_state.cur_connection.has_chunk_list.append(chunk_hash)
+            if chunk_hash in needed_chunk_list:
+                get_chunk_hash = bytes.fromhex(chunk_hash)
+                this_peer_state.cur_connection.ex_downloading_chunkhash = chunk_hash
+                needed_chunk_list.remove(chunk_hash)
+                break
+            l += 40
+            r += 40
+
+        print(f"prepare to GET {bytes.hex(get_chunk_hash)}, still need {needed_chunk_list}")
+
+        # send back GET pkt, if we need it.
+        if len(get_chunk_hash) != 0:
+            get_header = struct.pack(
+                "!HBBHHII", 52305, MY_TEAM, PeerPacketType.GET.value, HEADER_LEN, HEADER_LEN + len(get_chunk_hash), 0, 0)
+            get_pkt = get_header + get_chunk_hash
+            sock.sendto(get_pkt, from_addr)
 
         # update connection info
 
     elif packet_type == PeerPacketType.DATA:
         # received a DATA pkt
-        ex_received_chunk[this_peer_state.cur_connection.ex_downloading_chunkhash] += peer_packet.data
+        ex_downloading_chunkhash = this_peer_state.cur_connection.ex_downloading_chunkhash
+        ex_received_chunk[ex_downloading_chunkhash] += data
 
         # send back ACK
         ack_pkt = struct.pack("!HBBHHII", 52305, MY_TEAM, 4,
@@ -138,32 +213,43 @@ def process_inbound_udp(sock):
         sock.sendto(ack_pkt, from_addr)
 
         # see if finished
-        if len(ex_received_chunk[this_peer_state.cur_connection.ex_downloading_chunkhash]) == CHUNK_DATA_SIZE:
-            # finished downloading this chunkdata!
-            # dump your received chunk to file in dict form using pickle
-            with open(ex_output_file, "wb") as wf:
-                pickle.dump(ex_received_chunk, wf)
+        # todo 继续 send who has
+
+        # finished downloading this chunkdata!
+        if len(ex_received_chunk[ex_downloading_chunkhash]) == CHUNK_DATA_SIZE:
 
             # add to this peer's haschunk:
-            config.haschunks[this_peer_state.cur_connection.ex_downloading_chunkhash] = ex_received_chunk[
-                this_peer_state.cur_connection.ex_downloading_chunkhash]
+            config.haschunks[ex_downloading_chunkhash] = ex_received_chunk[ex_downloading_chunkhash]
+            this_peer_state.removeConnection(from_addr)
+
+            if len(needed_chunk_list) != 0:
+                send_whohas(sock)
 
             # you need to print "GOT" when finished downloading all chunks in a DOWNLOAD file
-            print(f"GOT {ex_output_file}")
+            if checkFinish():
+                with open(ex_output_file, "wb") as wf:
+                    # dump your received chunk to file in dict form using pickle
+                    pickle.dump(ex_received_chunk, wf)
+                print(f"GOT {ex_output_file}")
 
             # The following things are just for illustration, you do not need to print out in your design.
             sha1 = hashlib.sha1()
-            sha1.update(ex_received_chunk[this_peer_state.cur_connection.ex_downloading_chunkhash])
+            sha1.update(ex_received_chunk[ex_downloading_chunkhash])
             received_chunkhash_str = sha1.hexdigest()
-            print(f"Expected chunkhash: {this_peer_state.cur_connection.ex_downloading_chunkhash}")
+            print(f"Expected chunkhash: {ex_downloading_chunkhash}")
             print(f"Received chunkhash: {received_chunkhash_str}")
-            success = this_peer_state.cur_connection.ex_downloading_chunkhash == received_chunkhash_str
+            success = ex_downloading_chunkhash == received_chunkhash_str
             print(f"Successful received: {success}")
             if success:
                 print("Congrats! You have completed the example!")
             else:
                 print("Example fails. Please check the example files carefully.")
 
+def checkFinish():
+    for chunk_hash in ex_received_chunk.keys():
+        if len(ex_received_chunk[chunk_hash]) != CHUNK_DATA_SIZE:
+            return False
+    return True
 
 def process_download(sock, chunkfile, outputfile):
     """
@@ -174,7 +260,7 @@ def process_download(sock, chunkfile, outputfile):
     global ex_output_file
     global ex_received_chunk
     # global ex_downloading_chunkhash
-    global needed_chunk_ist
+    global needed_chunk_list
 
     # this_peer_state.cur_connection.ex_output_file = outputfile
     ex_output_file = outputfile
@@ -183,20 +269,26 @@ def process_download(sock, chunkfile, outputfile):
     download_hash = bytes()
     with open(chunkfile, 'r') as cf:
         for line in cf.readlines():
-            index, datahash_str = line.strip().split(" ")
-            ex_received_chunk[datahash_str] = bytes()
-            needed_chunk_ist.append(datahash_str)
+            index, chunk_hash = line.strip().split(" ")
+            ex_received_chunk[chunk_hash] = bytes()
+            needed_chunk_list.append(chunk_hash)
             # ex_downloading_chunkhash = datahash_str
 
-            # hex_str to bytes
-            datahash = bytes.fromhex(datahash_str)
-            download_hash = download_hash + datahash
+    send_whohas(sock)
+
+def send_whohas(sock):
+    global needed_chunk_list
+
+    download_hash = bytes()
+    for chunk_hash in needed_chunk_list:
+        download_hash += bytes.fromhex(chunk_hash)
 
     # Step2: make WHOHAS pkt
     # |2byte magic|1byte type |1byte team|
     # |2byte  header len  |2byte pkt len |
     # |      4byte  seq                  |
     # |      4byte  ack                  |
+
     whohas_header = struct.pack(
         "!HBBHHII", 52305, MY_TEAM, PeerPacketType.WHOHAS.value, HEADER_LEN, HEADER_LEN + len(download_hash), 0, 0)
     whohas_pkt = whohas_header + download_hash
@@ -263,7 +355,7 @@ def start_logger(verbose_level, id):
         else:
             sh_level = logging.INFO
         sh = logging.StreamHandler(stream=sys.stdout)
-        sh.setLevel(level=sh_level)
+        sh.setLevel(level = sh_level)
         sh.setFormatter(formatter)
         LOGGER.addHandler(sh)
     # 我们自己写的代码的 logger, 存放在src-log而不是log目录下，方便查看
