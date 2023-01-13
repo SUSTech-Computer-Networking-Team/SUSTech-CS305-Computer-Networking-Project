@@ -17,7 +17,7 @@ import socket
 import struct
 import util.simsocket as simsocket
 import select
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 """
 This is CS305 project skeleton code.
@@ -34,8 +34,8 @@ needed_chunk_list = []
 
 this_peer_state = PeerState()
 
-cwnd_plot = []
-time_plot = []
+cwnd_plot_list = []
+time_plot_list = []
 counter = 0
 
 contiguous_send_cnt = 10
@@ -43,11 +43,13 @@ contiguous_send_cnt = 10
 
 def check_timeout(sock: SimSocket) -> None:
     for conn in this_peer_state.connections:
-        if not conn.is_sender: return
+        if not conn.is_sender:
+            continue
         sending_wnd: TcpSendingWindow = conn.sending_wnd
         timeout_packets = sending_wnd.timeout_packets_seq()
         if len(timeout_packets) == 0:
             continue
+
         congestion_controller = conn.congestion_controller
         for seq in timeout_packets:
             pkt = sending_wnd.fetch_data(seq)
@@ -62,6 +64,7 @@ def check_timeout(sock: SimSocket) -> None:
 def process_inbound_udp(sock: SimSocket):
     global config
     global needed_chunk_list, ex_output_file, ex_received_chunk
+    global cwnd_plot_list, time_plot_list
 
     # global ex_sending_chunkhash
     # LOGGER.debug("进入process_inbound_udp函数")
@@ -75,7 +78,7 @@ def process_inbound_udp(sock: SimSocket):
     this_peer_state.cur_connection = this_peer_state.findConnection(from_addr)
     if this_peer_state.cur_connection is None:
         this_peer_state.cur_connection = this_peer_state.addConnection(from_addr)
-    LOGGER.debug(f"恢复与{from_addr}的连接{this_peer_state.cur_connection}")
+    # LOGGER.debug(f"恢复与{from_addr}的连接{this_peer_state.cur_connection}")
 
     print(
         f"prepared to response to {this_peer_state.cur_connection.connect_peer} with [team:{peer_packet.team_num}, "
@@ -91,7 +94,7 @@ def process_inbound_udp(sock: SimSocket):
         # bytes to hex_str
 
         # 如果已经和对方有连接，跳过，不能又发又接
-        if this_peer_state.cur_connection.ex_sending_chunkhash != "" or \
+        if this_peer_state.cur_connection.ex_sending_chunkhash != "" or\
                 this_peer_state.cur_connection.ex_downloading_chunkhash != "":
             return
 
@@ -156,6 +159,8 @@ def process_inbound_udp(sock: SimSocket):
             this_peer_state.sending_connections.append(this_peer_state.cur_connection)
             this_peer_state.cur_connection.receiving_peer = from_addr
             this_peer_state.cur_connection.sending_peer = (config.ip, config.port)
+            cwnd_plot_list.append(this_peer_state.cur_connection.cwnd_plot)
+            time_plot_list.append(this_peer_state.cur_connection.time_plot)
 
         else:
             # this_peer_state.removeConnection(from_addr)
@@ -170,7 +175,7 @@ def process_inbound_udp(sock: SimSocket):
         sending_wnd = this_peer_state.cur_connection.sending_wnd
         cwnd_plot = this_peer_state.cur_connection.cwnd_plot
         time_plot = this_peer_state.cur_connection.time_plot
-        time_plot_cnt = this_peer_state.cur_connection.time_plot_cnt
+        # time_plot_cnt = this_peer_state.cur_connection.time_plot_cnt
 
         ack_num = peer_packet.ack_num
 
@@ -187,12 +192,6 @@ def process_inbound_udp(sock: SimSocket):
                 # 先判断是否完成整个chunk的传输
                 # finished
                 print(f"finished sending {ex_sending_chunkhash} to {from_addr}")
-
-                # 画出cc的图
-                # plt.plot(time_plot, cwnd_plot, color='green', marker='o', linestyle='dashed', linewidth=1, markersize=3)
-                # plt.savefig(f"{from_addr[0]}-{from_addr[1]}.png")
-                # plt.show()
-
                 this_peer_state.removeConnection(from_addr)
             else:
                 for i in range(contiguous_send_cnt):
@@ -269,6 +268,7 @@ def process_inbound_udp(sock: SimSocket):
         # received a DATA pkt
         ex_downloading_chunkhash = this_peer_state.cur_connection.ex_downloading_chunkhash
         ex_received_chunk[ex_downloading_chunkhash] += data
+        LOGGER.debug(f"current mission length {len(ex_received_chunk[ex_downloading_chunkhash])}")
 
         # send back ACK
         ack_pkt = struct.pack("!HBBHHII", 52305, MY_TEAM, 4,
@@ -390,6 +390,7 @@ def peer_run(config):
             # crash check
             for con in this_peer_state.connections:
                 if con.last_receive_time != 0 and time.time() - con.last_receive_time >= 10:
+
                     crash_download_hash = con.ex_downloading_chunkhash
                     needed_chunk_list.append(crash_download_hash)
                     ex_received_chunk[crash_download_hash] = bytes()
