@@ -265,16 +265,21 @@ def process_inbound_udp(sock: SimSocket):
 
 
     elif packet_type == PeerPacketType.DATA:
-        # received a DATA pkt
-        ex_downloading_chunkhash = this_peer_state.cur_connection.ex_downloading_chunkhash
-        ex_received_chunk[ex_downloading_chunkhash] += data
-        LOGGER.debug(f"current mission length {len(ex_received_chunk[ex_downloading_chunkhash])}")
 
         # send back ACK
         ack_pkt = struct.pack("!HBBHHII", 52305, MY_TEAM, 4,
                               HEADER_LEN, HEADER_LEN, 0, peer_packet.seq_num)
         sock.sendto(ack_pkt, from_addr)
+
         this_peer_state.cur_connection.last_receive_time = time.time()
+
+        receiving_wnd = this_peer_state.cur_connection.receiving_wnd
+        if not receiving_wnd.try_receive(peer_packet.seq_num): return  # ACK是后面或者前面的。
+
+        # received a DATA pkt
+        ex_downloading_chunkhash = this_peer_state.cur_connection.ex_downloading_chunkhash
+        ex_received_chunk[ex_downloading_chunkhash] += data
+        LOGGER.debug(f"current mission length {len(ex_received_chunk[ex_downloading_chunkhash])}")
 
         # see if finished
         # todo 继续 send who has

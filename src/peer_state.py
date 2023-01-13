@@ -1,6 +1,7 @@
 from peer_constant import BUF_SIZE, CHUNK_DATA_SIZE, HEADER_LEN, MAX_PAYLOAD, MY_TEAM
 from congestion_controller import *
 from sending_window import *
+from src.receiving_window import TcpReceivingWindow
 from util.bt_utils import BtConfig
 
 
@@ -74,6 +75,8 @@ class TcpLikeConnection:
         timeout_estimator = TimeoutEstimator() if config.timeout is None else TimeoutEstimator(init_rtt=config.timeout,
                                                                                                fixed_timeout=True)
         self.sending_wnd = TcpSendingWindow(timeout_estimator=timeout_estimator)
+
+        self.receiving_wnd = TcpReceivingWindow()
 
         self.last_receive_time = 0
 
