@@ -77,7 +77,7 @@ def process_inbound_udp(sock: SimSocket):
     # judge the peer connection
     this_peer_state.cur_connection = this_peer_state.findConnection(from_addr)
     if this_peer_state.cur_connection is None:
-        this_peer_state.cur_connection = this_peer_state.addConnection(from_addr)
+        this_peer_state.cur_connection = this_peer_state.addConnection(from_addr, config=config)
     # LOGGER.debug(f"恢复与{from_addr}的连接{this_peer_state.cur_connection}")
 
     print(
@@ -94,7 +94,7 @@ def process_inbound_udp(sock: SimSocket):
         # bytes to hex_str
 
         # 如果已经和对方有连接，跳过，不能又发又接
-        if this_peer_state.cur_connection.ex_sending_chunkhash != "" or\
+        if this_peer_state.cur_connection.ex_sending_chunkhash != "" or \
                 this_peer_state.cur_connection.ex_downloading_chunkhash != "":
             return
 
@@ -390,7 +390,6 @@ def peer_run(config):
             # crash check
             for con in this_peer_state.connections:
                 if con.last_receive_time != 0 and time.time() - con.last_receive_time >= 10:
-
                     crash_download_hash = con.ex_downloading_chunkhash
                     needed_chunk_list.append(crash_download_hash)
                     ex_received_chunk[crash_download_hash] = bytes()

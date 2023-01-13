@@ -1,15 +1,17 @@
 from peer_constant import BUF_SIZE, CHUNK_DATA_SIZE, HEADER_LEN, MAX_PAYLOAD, MY_TEAM
 from congestion_controller import *
 from sending_window import *
+from util.bt_utils import BtConfig
 
 
 class PeerState:
     def __str__(self) -> str:
         return self.__dict__.__str__()
+
     def __init__(self) -> None:
         self.receiving_connections = []
         self.sending_connections = []
-        self.connections:List[TcpLikeConnection] = []
+        self.connections: List[TcpLikeConnection] = []
         self.cur_connection = None
         self.ack = 0
 
@@ -22,8 +24,8 @@ class PeerState:
                 return con
         return None
 
-    def addConnection(self, addr):
-        newConnection = TcpLikeConnection(connect_peer=addr)
+    def addConnection(self, addr, config: BtConfig):
+        newConnection = TcpLikeConnection(connect_peer=addr, config=config)
         self.connections.append(newConnection)
         return newConnection
 
@@ -45,8 +47,9 @@ class PeerState:
 class TcpLikeConnection:
     def __str__(self) -> str:
         return self.__dict__.__str__()
+
     def __init__(self, sending_peer=0, receiving_peer=1, sending_seqnum=0, receiving_seq_num=0,
-                 connect_peer=()) -> None:
+                 connect_peer=(), config: BtConfig = None) -> None:
         """TCP 连接状态
         Args:
             sending_peer (int, optional): _description_. Defaults to 0.
@@ -67,7 +70,10 @@ class TcpLikeConnection:
         self.has_chunk_list = []
 
         self.congestion_controller = CongestionController()
-        self.sending_wnd = TcpSendingWindow()
+
+        timeout_estimator = TimeoutEstimator() if config.timeout is None else TimeoutEstimator(init_rtt=config.timeout,
+                                                                                               fixed_timeout=True)
+        self.sending_wnd = TcpSendingWindow(timeout_estimator=timeout_estimator)
 
         self.last_receive_time = 0
 
