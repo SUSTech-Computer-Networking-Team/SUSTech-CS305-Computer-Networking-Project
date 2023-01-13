@@ -72,7 +72,7 @@ class TcpLikeConnection:
 
         self.congestion_controller = CongestionController()
 
-        timeout_estimator = TimeoutEstimator() if config.timeout is None else TimeoutEstimator(init_rtt=config.timeout,
+        timeout_estimator = TimeoutEstimator() if config.timeout == 0 else TimeoutEstimator(init_rtt=config.timeout,
                                                                                                fixed_timeout=True)
         self.sending_wnd = TcpSendingWindow(timeout_estimator=timeout_estimator)
 

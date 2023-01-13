@@ -30,7 +30,7 @@ class CongestionController:
 
     def notify_timeout(self):
         def restart():
-            self.slow_thresh = self.congestion_window / 2
+            self.slow_thresh = max(self.congestion_window / 2, 2)
             self.congestion_window = 1
             self.duplicate_ack_count = 0
 
@@ -52,7 +52,7 @@ class CongestionController:
                 self.duplicate_ack_count += 1
             else:
                 # 若counter>=3，进入快速回复
-                self.slow_thresh = self.congestion_window / 2
+                self.slow_thresh = max(self.congestion_window / 2, 2)
                 self.congestion_window = self.slow_thresh + 3
                 self.state = CongestionState.FAST_RECOVERY
 

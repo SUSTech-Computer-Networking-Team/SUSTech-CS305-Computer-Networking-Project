@@ -11,7 +11,7 @@ class TimeoutEstimator:
     def __str__(self) -> str:
         return self.__dict__.__str__()
 
-    def __init__(self, alpha: float = 1.0 / 8, beta: float = 1.0 / 8, sigma: float = 4, init_rtt: float = 1,
+    def __init__(self, alpha: float = 1.0 / 8, beta: float = 1.0 / 8, sigma: float = 4, init_rtt: float = 2,
                  update_interval: int = 1, fixed_timeout=False):
         """超时估计器。参考TCP的计算公式。
         Args:
@@ -34,11 +34,19 @@ class TimeoutEstimator:
         self.updates = 0
         self.update_interval = update_interval
 
-    def check_whether_timeout(self, time_waited: float):
+    def check_whether_timeout(self, time_waited: float)->bool:
+        """_summary_
+
+        Args:
+            time_waited (float): _description_
+
+        Returns:
+            bool: 如果超时，返回True，否则返回False。
+        """
         # if self.updates / self.update_interval == 0: return False # 如果采样次数不够，就不超时
-        result = time_waited > self.timeout_interval
-        if result:
-            self.timeout_interval *= 2  # 超时后，timeout_interval翻倍，以免过早出现超时。
+        result = (time_waited > self.timeout_interval)
+        # if result:
+        #     self.timeout_interval *= 2  # 超时后，timeout_interval翻倍，以免过早出现超时。
         return result
 
     def update(self, sample_rtt: float):
@@ -113,7 +121,7 @@ class TcpSendingWindow:
         if len(self.sent_pkt_list) < self.window_size:
             if len(self.sent_pkt_list) + 1 == self.window_size:
                 pass  # 包装 TCP_Window_Full 字段到 peer_packet
-            self.sent_pkt_list.append(TimedPacket(peer_packet))
+            self.sent_pkt_list.append(TimedPacket(peer_packet, send_time=time.time()))
             return True
         return False
 

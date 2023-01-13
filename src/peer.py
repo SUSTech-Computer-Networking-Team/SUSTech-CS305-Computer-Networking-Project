@@ -38,7 +38,8 @@ cwnd_plot_list = []
 time_plot_list = []
 counter = 0
 
-contiguous_send_cnt = 10
+# contiguous_send_cnt = 10
+contiguous_send_cnt = 1
 
 
 def check_timeout(sock: SimSocket) -> None:
@@ -53,12 +54,16 @@ def check_timeout(sock: SimSocket) -> None:
         congestion_controller = conn.congestion_controller
         for seq in timeout_packets:
             pkt = sending_wnd.fetch_data(seq)
+            LOGGER.debug(f"发现超时，{time.time():2f}-{pkt.send_time:2f}超过阈值{sending_wnd.timeout.timeout_interval}。"+
+                         f"当前窗口大小为{sending_wnd.window_size}。")
             # 更新包时间
             pkt.send_time = time.time()
             # 重传.
             sock.sendto(pkt.peer_packet.make_binary(), conn.receiving_peer)
             # 更新congestion window
             congestion_controller.notify_timeout()
+            sending_wnd.window_size = congestion_controller.cwnd()
+
 
 
 def process_inbound_udp(sock: SimSocket):
@@ -80,9 +85,9 @@ def process_inbound_udp(sock: SimSocket):
         this_peer_state.cur_connection = this_peer_state.addConnection(from_addr, config=config)
     # LOGGER.debug(f"恢复与{from_addr}的连接{this_peer_state.cur_connection}")
 
-    print(
-        f"prepared to response to {this_peer_state.cur_connection.connect_peer} with [team:{peer_packet.team_num}, "
-        f"type:{peer_packet.type_code}, Seq:{peer_packet.seq_num}, Ack:{peer_packet.ack_num}]")
+    # print(
+    #     f"prepared to response to {this_peer_state.cur_connection.connect_peer} with [team:{peer_packet.team_num}, "
+    #     f"type:{peer_packet.type_code}, Seq:{peer_packet.seq_num}, Ack:{peer_packet.ack_num}]")
 
     packet_type = PeerPacketType(peer_packet.type_code)
 
@@ -178,12 +183,14 @@ def process_inbound_udp(sock: SimSocket):
         # time_plot_cnt = this_peer_state.cur_connection.time_plot_cnt
 
         ack_num = peer_packet.ack_num
+        LOGGER.debug(f"接收到 ACK 报文。")
 
         # 判断是否是dupACK
         if sending_wnd.try_acknowledge(ack_num):
             # 不是dupACK
             congestion_controller.notify_new_ack()
             sending_wnd.window_size = congestion_controller.cwnd()
+            LOGGER.debug(f"是新的 ACK 报文。当前窗口大小为{sending_wnd.window_size}。")
 
             cwnd_plot.append(congestion_controller.cwnd())
             time_plot.append(time.time())
@@ -195,30 +202,37 @@ def process_inbound_udp(sock: SimSocket):
                 this_peer_state.removeConnection(from_addr)
             else:
                 for i in range(contiguous_send_cnt):
-                    left = ack_num * MAX_PAYLOAD
+                    last_ack_num = ack_num+i
+                    LOGGER.debug(f"正在连续发送，现在发的是{last_ack_num+1}")
+                    left = last_ack_num * MAX_PAYLOAD
                     if left > CHUNK_DATA_SIZE: break
-                    right = min((ack_num + 1) * MAX_PAYLOAD, CHUNK_DATA_SIZE)
+                    right = min((last_ack_num + 1) * MAX_PAYLOAD, CHUNK_DATA_SIZE)
                     next_data = config.haschunks[ex_sending_chunkhash][left: right]
 
-                    send_packet = PeerPacket(type_code=PeerPacketType.DATA.value, seq_num=ack_num + 1
+                    send_packet = PeerPacket(type_code=PeerPacketType.DATA.value, seq_num=last_ack_num + 1
                                              , data=next_data)
                     if sending_wnd.put_packet(send_packet):
+                        
                         # 没有超过窗口大小
                         sock.sendto(send_packet.make_binary(), from_addr)
-                    ack_num += 1  # 这个只是临时的，不是真正的ack_num。
+                    else:
+                        LOGGER.debug(f"由于窗口大小{sending_wnd.window_size}限制，停止连续发送，{last_ack_num+1}没有发送。")
+                        break
 
         else:
             # 是dupACK，应该更新congestion controller的状态
             # 根据当前的controller状态，判断dupACK counter是否满足重传条件
             congestion_controller.notify_duplicate()
             sending_wnd.window_size = congestion_controller.cwnd()
+            LOGGER.debug(f"是重复的 ACK 报文。更新后当前窗口大小为{sending_wnd.window_size}。")
 
             cwnd_plot.append(congestion_controller.cwnd())
             time_plot.append(time.time())
 
             if congestion_controller.duplicate_ack_count >= 3:
                 # 满足重传条件
-                fast_retransmit_packet: TimedPacket = sending_wnd.fetch_data(ack_num)
+                # if 
+                fast_retransmit_packet: TimedPacket = sending_wnd.fetch_data(ack_num+1)
                 fast_retransmit_packet.send_time = time.time()  # 重传之后重新计时。
                 sock.sendto(fast_retransmit_packet.peer_packet.make_binary(), from_addr)
             else:
@@ -390,7 +404,7 @@ def peer_run(config):
         while True:
 
             # 超时检查
-            # check_timeout(sock)
+            check_timeout(sock)
 
             # crash check
             for con in this_peer_state.connections:
@@ -421,7 +435,7 @@ def peer_run(config):
             plt.plot(t, c, color='green', marker='o', linestyle='dashed', linewidth=1, markersize=3)
             plt.title(f"{config.ip}:{config.port}")
             plt.savefig(f"img/{config.ip}-{config.port}.png")
-            plt.show()
+            # plt.show()
         sock.close()
 
 
