@@ -39,6 +39,8 @@ time_plot_list = []
 counter = 0
 
 contiguous_send_cnt = 10
+
+
 # contiguous_send_cnt = 5
 # contiguous_send_cnt = 1
 
@@ -189,7 +191,7 @@ def process_inbound_udp(sock: SimSocket):
             # 不是dupACK
             congestion_controller.notify_new_ack()
             sending_wnd.window_size = congestion_controller.cwnd()
-            LOGGER.debug(f"是新的 ACK 报文。当前窗口大小为{sending_wnd.window_size}。")
+            LOGGER.debug(f"是新的 ACK 报文。当前窗口大小为{sending_wnd.window_size}， 发送窗口首个报文的seq_num为{sending_wnd.front_seq}。")
 
             cwnd_plot.append(congestion_controller.cwnd())
             time_plot.append(time.time())
@@ -202,15 +204,17 @@ def process_inbound_udp(sock: SimSocket):
             else:
                 for i in range(contiguous_send_cnt):
                     # last_ack_num = ack_num + i
-                    last_ack_num = sending_wnd.front_seq+len(sending_wnd.sent_pkt_list)    # 是新的ACK，需要判断之前有没有到哪了。
+                    next_seq = sending_wnd.front_seq + len(sending_wnd.sent_pkt_list)  # 是新的ACK，需要判断之前有没有到哪了。
 
-                    LOGGER.debug(f"正在连续发送第{i}次，现在发的是{last_ack_num + 1}")
-                    left = last_ack_num * MAX_PAYLOAD
-                    if left > CHUNK_DATA_SIZE: break
-                    right = min((last_ack_num + 1) * MAX_PAYLOAD, CHUNK_DATA_SIZE)
+                    LOGGER.debug(f"正在连续发送第{i}次，现在发的是{next_seq}")
+                    left = (next_seq-1) * MAX_PAYLOAD
+                    if left >= CHUNK_DATA_SIZE:
+                        LOGGER.warning(f"发送应该结束了，不发送{next_seq}了。")
+                        break
+                    right = min(next_seq * MAX_PAYLOAD, CHUNK_DATA_SIZE)
                     next_data = config.haschunks[ex_sending_chunkhash][left: right]
 
-                    send_packet = PeerPacket(type_code=PeerPacketType.DATA.value, seq_num=last_ack_num + 1
+                    send_packet = PeerPacket(type_code=PeerPacketType.DATA.value, seq_num=next_seq
                                              , data=next_data)
                     if sending_wnd.put_packet(send_packet):
 
@@ -219,7 +223,7 @@ def process_inbound_udp(sock: SimSocket):
                     else:
                         # sending_wnd.force_put_packet(send_packet)  # 强行放进去，用重传机制来保证发送。
                         LOGGER.debug(
-                            f"由于窗口大小{sending_wnd.window_size}限制，停止连续发送，{last_ack_num + 1}没有发送。")
+                            f"由于窗口大小{sending_wnd.window_size}限制，停止连续发送，{next_seq}没有发送。")
                         break
 
         else:
@@ -287,15 +291,22 @@ def process_inbound_udp(sock: SimSocket):
         # send back ACK
         # ack_pkt = struct.pack("!HBBHHII", 52305, MY_TEAM, 4,
         #                       HEADER_LEN, HEADER_LEN, 0, peer_packet.seq_num)
-        LOGGER.debug(f"收到了一个DATA报文，序号为{peer_packet.seq_num}, 长度为{len(data)}。")
-        ack_pkt = PeerPacket(type_code=PeerPacketType.ACK.value, ack_num=peer_packet.seq_num)
-        sock.sendto(ack_pkt.make_binary(), from_addr)
-        LOGGER.debug(f"返还一个ack报文，序号为{ack_pkt.ack_num}。")
 
+        LOGGER.debug(f"收到了一个DATA报文，序号为{peer_packet.seq_num}, 长度为{len(data)}。")
         this_peer_state.cur_connection.last_receive_time = time.time()
 
         receiving_wnd = this_peer_state.cur_connection.receiving_wnd
-        if not receiving_wnd.try_receive(peer_packet.seq_num): return  # ACK是后面或者前面的。
+
+        if not receiving_wnd.try_receive(peer_packet.seq_num):
+            LOGGER.warning("收到了一个重复的数据报文，丢弃。")
+            ack_pkt = PeerPacket(type_code=PeerPacketType.ACK.value, ack_num=receiving_wnd.ack)
+            sock.sendto(ack_pkt.make_binary(), from_addr)
+            return  # ACK是后面或者前面的。
+
+        # 接收到新的数据。
+        ack_pkt = PeerPacket(type_code=PeerPacketType.ACK.value, ack_num=peer_packet.seq_num)
+        sock.sendto(ack_pkt.make_binary(), from_addr)
+        LOGGER.debug(f"返还一个ack报文，序号为{ack_pkt.ack_num}。")
 
         # received a DATA pkt
         ex_downloading_chunkhash = this_peer_state.cur_connection.ex_downloading_chunkhash

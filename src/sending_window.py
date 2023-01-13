@@ -68,7 +68,13 @@ class TimedPacket:
 
 
 class TcpSendingWindow:
-    def __init__(self, timeout_estimator: TimeoutEstimator = TimeoutEstimator(), init_seq=0, init_win_size=1, ) -> None:
+    def __init__(self, timeout_estimator: TimeoutEstimator = TimeoutEstimator(), init_seq=1, init_win_size=1, ) -> None:
+        """
+
+        :param timeout_estimator:
+        :param init_seq: 1，因为是从收到GET包开始的。
+        :param init_win_size:
+        """
         self.sent_pkt_list: List[TimedPacket] = []
         self.front_seq = init_seq
         self.window_size = init_win_size  # 以packet为单位
@@ -88,7 +94,7 @@ class TcpSendingWindow:
         Returns:
             bool: 是否是 Duplicated ACK。 如果是，外面还要根据情况看看要不要快速重传。
         """
-        if ack <= self.front_seq:
+        if ack < self.front_seq:
             # Duplicated ACK 出现了
             return False
         for i in range(self.seq2index(ack)):
