@@ -37,6 +37,13 @@ class PeerState:
                 return True
         return False
 
+    def remove_sending_connection(self, addr):
+        for i in range(len(self.sending_connections)):
+            if addr == self.sending_connections[i].connect_peer:
+                self.sending_connections.pop(i)
+                return True
+        return False
+
 
 # class DownloadMission:
 #     def __init__(self, eof, erc, edc):

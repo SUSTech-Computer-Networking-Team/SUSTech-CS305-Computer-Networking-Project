@@ -201,6 +201,8 @@ def process_inbound_udp(sock: SimSocket):
                 # finished
                 print(f"finished sending {ex_sending_chunkhash} to {from_addr}")
                 this_peer_state.removeConnection(from_addr)
+                this_peer_state.remove_sending_connection(from_addr)
+
 
             else:
                 for i in range(contiguous_send_cnt):
@@ -433,6 +435,7 @@ def peer_run(config):
                     needed_chunk_list.append(crash_download_hash)
                     ex_received_chunk[crash_download_hash] = bytes()
                     this_peer_state.removeConnection(con.connect_peer)
+                    this_peer_state.remove_sending_connection(from_addr)
                     send_whohas(sock)
 
             ready = select.select([sock, sys.stdin], [], [], 0.1)
