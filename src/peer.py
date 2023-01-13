@@ -180,7 +180,7 @@ def process_inbound_udp(sock: SimSocket):
         ack_num = peer_packet.ack_num
 
         # 判断是否是dupACK
-        if sending_wnd.try_acknowledge(ack_num + 1):
+        if sending_wnd.try_acknowledge(ack_num):
             # 不是dupACK
             congestion_controller.notify_new_ack()
             sending_wnd.window_size = congestion_controller.cwnd()
@@ -390,7 +390,7 @@ def peer_run(config):
         while True:
 
             # 超时检查
-            check_timeout(sock)
+            # check_timeout(sock)
 
             # crash check
             for con in this_peer_state.connections:
@@ -414,6 +414,14 @@ def peer_run(config):
     except KeyboardInterrupt:
         pass
     finally:
+        # 画出cc的图
+        for i in range(len(time_plot_list)):
+            t = time_plot_list[i]
+            c = cwnd_plot_list[i]
+            plt.plot(t, c, color='green', marker='o', linestyle='dashed', linewidth=1, markersize=3)
+            plt.title(f"{config.ip}:{config.port}")
+            plt.savefig(f"img/{config.ip}-{config.port}.png")
+            plt.show()
         sock.close()
 
 
