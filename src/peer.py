@@ -184,7 +184,7 @@ def process_inbound_udp(sock: SimSocket):
         # time_plot_cnt = this_peer_state.cur_connection.time_plot_cnt
 
         ack_num = peer_packet.ack_num
-        LOGGER.debug(f"接收到 ACK 报文。")
+        LOGGER.debug(f"接收到 ACK 报文 {ack_num}。")
 
         # 判断是否是dupACK
         if sending_wnd.try_acknowledge(ack_num):
@@ -201,6 +201,7 @@ def process_inbound_udp(sock: SimSocket):
                 # finished
                 print(f"finished sending {ex_sending_chunkhash} to {from_addr}")
                 this_peer_state.removeConnection(from_addr)
+
             else:
                 for i in range(contiguous_send_cnt):
                     # last_ack_num = ack_num + i

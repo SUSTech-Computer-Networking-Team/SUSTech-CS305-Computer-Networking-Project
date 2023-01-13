@@ -97,11 +97,11 @@ class TcpSendingWindow:
         if ack < self.front_seq:
             # Duplicated ACK 出现了
             return False
-        for i in range(self.seq2index(ack)):
+        for i in range(self.seq2index(ack) + 1):
             if len(self.sent_pkt_list) != 0:
                 pkt = self.sent_pkt_list.pop(0)  # xxx
                 self.timeout.update(time.time() - pkt.send_time)  # 更新 rtt 的估计。
-        self.front_seq = ack
+        self.front_seq = ack + 1
         return True
 
     def timeout_packets_seq(self) -> List[int]:
