@@ -125,6 +125,9 @@ class TcpSendingWindow:
             return True
         return False
 
+    def force_put_packet(self, peer_packet: PeerPacket):
+        self.sent_pkt_list.append(TimedPacket(peer_packet, send_time=time.time()))
+
     def fetch_data(self, seq: int) -> TimedPacket:
         """获取发送窗口中的数据。
         

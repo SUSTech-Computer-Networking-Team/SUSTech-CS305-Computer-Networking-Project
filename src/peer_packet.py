@@ -20,10 +20,10 @@ class PeerPacket:
         self.team_num = team_num
         self.type_code = type_code
         self.header_len = header_len
-        self.pkt_len = pkt_len
         self.seq_num = seq_num
         self.ack_num = ack_num
         self.data = data
+        self.pkt_len = header_len+len(data)
 
     def __str__(self) -> str:
         return self.__dict__.__str__()

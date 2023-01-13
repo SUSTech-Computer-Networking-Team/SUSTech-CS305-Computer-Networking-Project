@@ -38,8 +38,9 @@ cwnd_plot_list = []
 time_plot_list = []
 counter = 0
 
-# contiguous_send_cnt = 10
-contiguous_send_cnt = 1
+contiguous_send_cnt = 10
+# contiguous_send_cnt = 5
+# contiguous_send_cnt = 1
 
 
 def check_timeout(sock: SimSocket) -> None:
@@ -54,8 +55,9 @@ def check_timeout(sock: SimSocket) -> None:
         congestion_controller = conn.congestion_controller
         for seq in timeout_packets:
             pkt = sending_wnd.fetch_data(seq)
-            LOGGER.debug(f"发现超时，{time.time():2f}-{pkt.send_time:2f}超过阈值{sending_wnd.timeout.timeout_interval}。"+
-                         f"当前窗口大小为{sending_wnd.window_size}。")
+            LOGGER.debug(
+                f"发现超时，{time.time():2f}-{pkt.send_time:2f}超过阈值{sending_wnd.timeout.timeout_interval}。" +
+                f"当前窗口大小为{sending_wnd.window_size}。")
             # 更新包时间
             pkt.send_time = time.time()
             # 重传.
@@ -63,7 +65,6 @@ def check_timeout(sock: SimSocket) -> None:
             # 更新congestion window
             congestion_controller.notify_timeout()
             sending_wnd.window_size = congestion_controller.cwnd()
-
 
 
 def process_inbound_udp(sock: SimSocket):
@@ -119,11 +120,13 @@ def process_inbound_udp(sock: SimSocket):
             r += 40
 
         if isHave:
-            print(f"whohas: {chunkhash_list}, has: {bytes.hex(have_list)}")
+            LOGGER.info(f"收到whohas: {chunkhash_list}, 而我有: {bytes.hex(have_list)}")
             # send back IHAVE pkt
-            ihave_header = struct.pack(
-                "!HBBHHII", 52305, MY_TEAM, PeerPacketType.IHAVE.value, HEADER_LEN, HEADER_LEN + len(have_list), 0, 0)
-            ihave_pkt = ihave_header + have_list
+            # ihave_header = struct.pack(
+            #     "!HBBHHII", 52305, MY_TEAM, PeerPacketType.IHAVE.value, HEADER_LEN, HEADER_LEN + len(have_list), 0, 0)
+            # ihave_pkt = ihave_header + have_list
+
+            ihave_pkt = PeerPacket(type_code=PeerPacketType.IHAVE.value, data=have_list).make_binary()
             sock.sendto(ihave_pkt, from_addr)
         else:
             this_peer_state.removeConnection(from_addr)
@@ -148,10 +151,6 @@ def process_inbound_udp(sock: SimSocket):
         chunk_data = config.haschunks[get_hash][:MAX_PAYLOAD]
 
         # send back DATA
-
-        # data_header = struct.pack(
-        #     "!HBBHHII", 52305, MY_TEAM, 3, HEADER_LEN, HEADER_LEN, 1, 0)
-        # sock.sendto(data_header + chunk_data, from_addr)
 
         sending_wnd = this_peer_state.cur_connection.sending_wnd
         send_packet = PeerPacket(type_code=PeerPacketType.DATA.value, seq_num=1
@@ -202,8 +201,10 @@ def process_inbound_udp(sock: SimSocket):
                 this_peer_state.removeConnection(from_addr)
             else:
                 for i in range(contiguous_send_cnt):
-                    last_ack_num = ack_num+i
-                    LOGGER.debug(f"正在连续发送，现在发的是{last_ack_num+1}")
+                    # last_ack_num = ack_num + i
+                    last_ack_num = sending_wnd.front_seq+len(sending_wnd.sent_pkt_list)    # 是新的ACK，需要判断之前有没有到哪了。
+
+                    LOGGER.debug(f"正在连续发送第{i}次，现在发的是{last_ack_num + 1}")
                     left = last_ack_num * MAX_PAYLOAD
                     if left > CHUNK_DATA_SIZE: break
                     right = min((last_ack_num + 1) * MAX_PAYLOAD, CHUNK_DATA_SIZE)
@@ -212,11 +213,13 @@ def process_inbound_udp(sock: SimSocket):
                     send_packet = PeerPacket(type_code=PeerPacketType.DATA.value, seq_num=last_ack_num + 1
                                              , data=next_data)
                     if sending_wnd.put_packet(send_packet):
-                        
+
                         # 没有超过窗口大小
                         sock.sendto(send_packet.make_binary(), from_addr)
                     else:
-                        LOGGER.debug(f"由于窗口大小{sending_wnd.window_size}限制，停止连续发送，{last_ack_num+1}没有发送。")
+                        # sending_wnd.force_put_packet(send_packet)  # 强行放进去，用重传机制来保证发送。
+                        LOGGER.debug(
+                            f"由于窗口大小{sending_wnd.window_size}限制，停止连续发送，{last_ack_num + 1}没有发送。")
                         break
 
         else:
@@ -232,7 +235,7 @@ def process_inbound_udp(sock: SimSocket):
             if congestion_controller.duplicate_ack_count >= 3:
                 # 满足重传条件
                 # if 
-                fast_retransmit_packet: TimedPacket = sending_wnd.fetch_data(ack_num+1)
+                fast_retransmit_packet: TimedPacket = sending_wnd.fetch_data(ack_num + 1)
                 fast_retransmit_packet.send_time = time.time()  # 重传之后重新计时。
                 sock.sendto(fast_retransmit_packet.peer_packet.make_binary(), from_addr)
             else:
@@ -264,10 +267,11 @@ def process_inbound_udp(sock: SimSocket):
 
         # send back GET pkt, if we need it.
         if len(get_chunk_hash) != 0:
-            get_header = struct.pack(
-                "!HBBHHII", 52305, MY_TEAM, PeerPacketType.GET.value, HEADER_LEN, HEADER_LEN + len(get_chunk_hash), 0,
-                0)
-            get_pkt = get_header + get_chunk_hash
+            # get_header = struct.pack(
+            #     "!HBBHHII", 52305, MY_TEAM, PeerPacketType.GET.value, HEADER_LEN, HEADER_LEN + len(get_chunk_hash), 0,
+            #     0)
+            # get_pkt = get_header + get_chunk_hash
+            get_pkt = PeerPacket(type_code=PeerPacketType.GET.value, data=get_chunk_hash).make_binary()
             sock.sendto(get_pkt, from_addr)
 
             this_peer_state.cur_connection.is_sender = False
@@ -281,9 +285,12 @@ def process_inbound_udp(sock: SimSocket):
     elif packet_type == PeerPacketType.DATA:
 
         # send back ACK
-        ack_pkt = struct.pack("!HBBHHII", 52305, MY_TEAM, 4,
-                              HEADER_LEN, HEADER_LEN, 0, peer_packet.seq_num)
-        sock.sendto(ack_pkt, from_addr)
+        # ack_pkt = struct.pack("!HBBHHII", 52305, MY_TEAM, 4,
+        #                       HEADER_LEN, HEADER_LEN, 0, peer_packet.seq_num)
+        LOGGER.debug(f"收到了一个DATA报文，序号为{peer_packet.seq_num}, 长度为{len(data)}。")
+        ack_pkt = PeerPacket(type_code=PeerPacketType.ACK.value, ack_num=peer_packet.seq_num)
+        sock.sendto(ack_pkt.make_binary(), from_addr)
+        LOGGER.debug(f"返还一个ack报文，序号为{ack_pkt.ack_num}。")
 
         this_peer_state.cur_connection.last_receive_time = time.time()
 
@@ -375,17 +382,18 @@ def send_whohas(sock):
     # |      4byte  seq                  |
     # |      4byte  ack                  |
 
-    whohas_header = struct.pack(
-        "!HBBHHII", 52305, MY_TEAM, PeerPacketType.WHOHAS.value, HEADER_LEN, HEADER_LEN + len(download_hash), 0, 0)
-    whohas_pkt = whohas_header + download_hash
-    info = struct.unpack("!HBBHHII", whohas_header)
+    # whohas_header = struct.pack(
+    #     "!HBBHHII", 52305, MY_TEAM, PeerPacketType.WHOHAS.value, HEADER_LEN, HEADER_LEN + len(download_hash), 0, 0)
+    # whohas_pkt = whohas_header + download_hash
+    whohas_pkt = PeerPacket(type_code=PeerPacketType.WHOHAS.value, data=download_hash).make_binary()
+    # info = struct.unpack("!HBBHHII", whohas_header)
 
     # Step3: flooding whohas to all peers in peer list
     peer_list = config.peers
     for p in peer_list:
         if int(p[0]) != config.identity:
             sock.sendto(whohas_pkt, (p[1], int(p[2])))
-            print(f"send whohas to ({p[1]}:{p[2]}) with {info}")
+            print(f"send whohas to ({p[1]}:{p[2]}) with {whohas_pkt}")
 
 
 def process_user_input(sock):
