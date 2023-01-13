@@ -73,7 +73,7 @@ def process_inbound_udp(sock: SimSocket):
     this_peer_state.cur_connection = this_peer_state.findConnection(from_addr)
     if this_peer_state.cur_connection is None:
         this_peer_state.cur_connection = this_peer_state.addConnection(from_addr)
-    LOGGER.debug(f"恢复与{from_addr}的连接{this_peer_state.cur_connection}")
+    # LOGGER.debug(f"恢复与{from_addr}的连接{this_peer_state.cur_connection}")
 
     print(
         f"prepared to response to {this_peer_state.cur_connection.connect_peer} with [team:{peer_packet.team_num}, "
