@@ -409,6 +409,14 @@ def peer_run(config):
     except KeyboardInterrupt:
         pass
     finally:
+        # 画出cc的图
+        for i in range(len(time_plot_list)):
+            t = time_plot_list[i]
+            c = cwnd_plot_list[i]
+            plt.plot(t, c, color='green', marker='o', linestyle='dashed', linewidth=1, markersize=3)
+            plt.title(f"{config.ip}:{config.port}")
+            plt.savefig(f"img/{config.ip}-{config.port}.png")
+            plt.show()
         sock.close()
 
 
