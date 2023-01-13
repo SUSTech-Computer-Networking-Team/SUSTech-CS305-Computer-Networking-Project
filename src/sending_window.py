@@ -12,7 +12,7 @@ class TimeoutEstimator:
         return self.__dict__.__str__()
 
     def __init__(self, alpha: float = 1.0 / 8, beta: float = 1.0 / 8, sigma: float = 4, init_rtt: float = 1,
-                 update_interval: int = 1):
+                 update_interval: int = 1, fixed_timeout=False):
         """超时估计器。参考TCP的计算公式。
         Args:
             alpha (float, optional): 对新的SampleRTT的接受程度. Defaults to 1.0/8.
@@ -21,6 +21,7 @@ class TimeoutEstimator:
             init_rtt (float, optional): 初始的超时时间. Defaults to 1.
             update_interval (int, optional): 更新的间隔. Defaults to 1.
         """
+        self.fixed_timeout = fixed_timeout  # 是否固定超时时间
         self.alpha = alpha
         self.beta = beta
         self.sigma = sigma
@@ -42,7 +43,7 @@ class TimeoutEstimator:
 
     def update(self, sample_rtt: float):
         self.updates += 1
-        if self.updates % self.update_interval != 0:
+        if self.updates % self.update_interval != 0 and not self.fixed_timeout:
             return
         # 到了采样间隔，才更新。
         self.estimate_rtt += self.alpha * (sample_rtt - self.estimate_rtt)
